@@ -35,8 +35,8 @@ Both gpasm and the header files are in the Ubuntu "gputils" package.
 The makefile for PrettyPoi is set up to assemble for either the PIC16F1827
 chip or the PIC16F1847 chip or both:
 
-  make pretty27.hex
-  make pretty47.hex
+  make pretty27
+  make pretty47
   make all
 
 The source file "prettypoi.asm" assumes the correct pin assignment for
