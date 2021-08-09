@@ -62,6 +62,9 @@
 ;
 ; There are a few technical improvements:
 ;
+;   * The Power Latch control works correctly. In the Off state, the Mode
+;     button being pressed for less than the required turn-on hold time will
+;     cause the MCU tp properly turn off the power to itself and the LEDs.
 ;   * The Last Used Pattern memory is not updated by the Slideshow mode
 ;     automatically advancing the selected pattern. (Stopping the slideshow
 ;     or using the Mode Button or the Pattern Buttons will cause an update
