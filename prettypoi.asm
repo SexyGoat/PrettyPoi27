@@ -5,7 +5,7 @@
 
 
 ; PrettyPoi firmware for Ninja LED stick poi
-; Version: 0.9.0.0
+; Version: 0.9.1.0
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -346,17 +346,17 @@ FULL_RAM_SIZE equ 1024
 
   if (LEDS_ORIENTAION) == 0
     ; Old series
-UPB_LED3_RED    equ UPB('B', 4)
+UPB_LED3_RED    equ UPB('A', 4)
 UPB_LED3_GREEN  equ UPB('B', 0)
-UPB_LED3_BLUE   equ UPB('B', 3)
+UPB_LED3_BLUE   equ UPB('A', 3)
 
 UPB_LED2_RED    equ UPB('B', 2)
 UPB_LED2_GREEN  equ UPB('B', 3)
-UPB_LED2_BLUE   equ UPB('B', 4)
+UPB_LED2_BLUE   equ UPB('B', 1)
 
-UPB_LED1_RED    equ UPB('A', 5)
+UPB_LED1_RED    equ UPB('B', 5)
 UPB_LED1_GREEN  equ UPB('B', 4)
-UPB_LED1_BLUE   equ UPB('A', 6)
+UPB_LED1_BLUE   equ UPB('B', 6)
   endif
 
   if (LEDS_ORIENTAION) == 1
