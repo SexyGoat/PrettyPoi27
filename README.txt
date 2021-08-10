@@ -5,20 +5,20 @@ PrettyPoi Firmware for a Ninja 3-RGBLED Stick Poi sold by Home of Poi
 (c) Copyright 2021, Daniel Neville, creamygoat@gmail.com
 
 
-This file is part of PrettyPoi.
+This file is part of PrettyPoi27.
 
-PrettyPoi is free software: you can redistribute it and/or modify
+PrettyPoi27 is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-PrettyPoi is distributed in the hope that it will be useful,
+PrettyPoi27 is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with PrettyPoi.
+along with PrettyPoi27.
 
 
 -------------------------------------------------------------------------------

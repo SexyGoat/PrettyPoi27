@@ -2,20 +2,20 @@
 
 # (c) Copyright 2021, Daniel Neville
 
-# This file is part of PrettyPoi.
+# This file is part of PrettyPoi27.
 #
-# PrettyPoi is free software: you can redistribute it and/or modify
+# PrettyPoi27 is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# PrettyPoi is distributed in the hope that it will be useful,
+# PrettyPoi27 is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with PrettyPoi. If not, see <https://www.gnu.org/licenses/>.
+# along with PrettyPoi27. If not, see <https://www.gnu.org/licenses/>.
 
 
 .PHONY = help clean all pretty27 pretty47 burn27 burn47 \
@@ -77,12 +77,12 @@ pretty47: ${HEX_FILE_47}
 
 ${HEX_FILE_27}: ${MAIN_STEM}.asm $(wildcard *.inc) $(wildcard *.h)
 	${ASM} -o ${HEX_FILE_27} -p p16f1827 ${MAIN_STEM}.asm
-	@echo "✅ Hex file" '"'"${HEX_FILE_27}"'"' "is ready to burn"\
+	@echo "Hex file" '"'"${HEX_FILE_27}"'"' "is ready to burn"\
 		"(with" '"make burn27"'")."
 
 ${HEX_FILE_47}: ${MAIN_STEM}.asm $(wildcard *.inc) $(wildcard *.h)
 	${ASM} -o ${HEX_FILE_47} -p p16f1847 ${MAIN_STEM}.asm
-	@echo "✅ Hex file" '"'"${HEX_FILE_47}"'"' "is ready to burn"\
+	@echo "Hex file" '"'"${HEX_FILE_47}"'"' "is ready to burn"\
 		"(with" '"make burn47"'")."
 
 burn27: ${HEX_FILE_27}
