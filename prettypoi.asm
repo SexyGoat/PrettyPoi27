@@ -1,11 +1,11 @@
 ;------------------------------------------------------------------------------
-; PrettyPoi code for the Old Series "Ninja Poi" incorporating the PIC16F1827
+; PrettyPoi27 code for the Old Series "Ninja Poi" incorporating the PIC16F1827
 ; (For use with gpasm, an assembler with a C preprocessor)
 ;------------------------------------------------------------------------------
 
 
-; PrettyPoi firmware for Ninja LED stick poi
-; Version: 0.9.1.2
+; PrettyPoi27 firmware for Ninja LED stick poi
+; Version: 0.9.1.3
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -307,7 +307,7 @@
           include p16f1827.inc
           radix dec
 TARGET_MCU equ 1
-LEDS_ORIENTAION = 0
+LEDS_ORIENTAION equ 0
 FULL_RAM_SIZE equ 384
         endif
 
@@ -315,7 +315,7 @@ FULL_RAM_SIZE equ 384
           include p16f1847.inc
           radix dec
 TARGET_MCU equ 2
-LEDS_ORIENTAION = 1
+LEDS_ORIENTAION equ 1
 FULL_RAM_SIZE equ 1024
         endif
 
@@ -439,8 +439,8 @@ ACF_BIT_FORMAT0         equ 0
 ACF_FORMAT_MASK         equ 0x07
 
 ; Debounced button flags
-INPUT_BIT_MODE = 0
-INPUT_BIT_PATTERN = 1
+INPUT_BIT_MODE          equ 0
+INPUT_BIT_PATTERN       equ 1
 
 ; Frame control flags
 FCF_BIT_DELTA           equ 7  ; 0 => Load, 1 => Delta
@@ -488,34 +488,34 @@ PATSF_BAPM_PF       equ PATSF_BAPM_P | PATSF_BAPM_F
 PATSF_BAPM_PM       equ PATSF_BAPM_P | PATSF_BAPM_M
 PATSF_BAPM_PMF      equ PATSF_BAPM_P | PATSF_BAPM_M | PATSF_BAPM_F
 
-RAMPS_MASK    equ 0x3F  ; Mask for ramps index for palette modification
-RAMPS_USER    equ 0x3F  ; Indicates pattern ramp index is user-settable
+RAMPS_MASK  equ 0x3F  ; Mask for ramps index for palette modification
+RAMPS_USER  equ 0x3F  ; Indicates pattern ramp index is user-settable
 
 ; Linear RAM metrics
-LINEAR_RAM_SIZE = FULL_RAM_SIZE - 16
-LINEAR_RAM_START = 0x2000
-LINEAR_RAM_END = LINEAR_RAM_START + LINEAR_RAM_SIZE
+LINEAR_RAM_SIZE     equ FULL_RAM_SIZE - 16
+LINEAR_RAM_START    equ 0x2000
+LINEAR_RAM_END      equ LINEAR_RAM_START + LINEAR_RAM_SIZE
 
 ; Where the expanded pattern goes, ready to be read into the pattern player
-DEFAULT_PATTERN_ADDR = LINEAR_RAM_START + 64
-MAX_PATTERN_SIZE = LINEAR_RAM_END - DEFAULT_PATTERN_ADDR
+DEFAULT_PATTERN_ADDR  equ LINEAR_RAM_START + 64
+MAX_PATTERN_SIZE      equ LINEAR_RAM_END - DEFAULT_PATTERN_ADDR
 ; (Straddling the Common SRAM between 0x2049 and 0x2050 is perfectly fine.)
 
 ; If the normal animation player is broken, the fallback shutdown cue
 ; will help with debugging by making programmed shutdown obvious.
-USE_FALLBACK_SHUTDOWN_CUE = 0
+USE_FALLBACK_SHUTDOWN_CUE   equ 0
 
 ; The PWM cycle frequency is used in expressions to calculate the required
 ; interval in units of PWM cycles.
 
-PWM_CYCLE_FREQUENCY = 443  ; Hz,
+PWM_CYCLE_FREQUENCY   equ 443  ; Hz,
 
-SLIDESHOW_INTERVAL_1 = 3000   ; milliseconds
-SLIDESHOW_INTERVAL_2 = 7000   ; milliseconds
-SLIDESHOW_INTERVAL_3 = 15000  ; milliseconds
-SLIDESHOW_INTV_1_PWM_CYCLES = SLIDESHOW_INTERVAL_1 * PWM_CYCLE_FREQUENCY / 1000
-SLIDESHOW_INTV_2_PWM_CYCLES = SLIDESHOW_INTERVAL_2 * PWM_CYCLE_FREQUENCY / 1000
-SLIDESHOW_INTV_3_PWM_CYCLES = SLIDESHOW_INTERVAL_3 * PWM_CYCLE_FREQUENCY / 1000
+SLIDESHOW_INTERVAL_1  equ 3000   ; milliseconds
+SLIDESHOW_INTERVAL_2  equ 7000   ; milliseconds
+SLIDESHOW_INTERVAL_3  equ 15000  ; milliseconds
+SLIDESHOW_INTV_1_PWM_CYCLES equ SLIDESHOW_INTERVAL_1 * PWM_CYCLE_FREQUENCY/1000
+SLIDESHOW_INTV_2_PWM_CYCLES equ SLIDESHOW_INTERVAL_2 * PWM_CYCLE_FREQUENCY/1000
+SLIDESHOW_INTV_3_PWM_CYCLES equ SLIDESHOW_INTERVAL_3 * PWM_CYCLE_FREQUENCY/1000
 
 
 ;------------------------------------------------------------------------------
@@ -535,7 +535,7 @@ EWLAccess_Length: 1
 EWLAccess_StatusRing: 1
 EWLAccess_DataRing: 1
 EWLAccess_DataSlotSize: 1
-EWLAccessSize
+EWLAccessSize:
         ENDC
 
 ; EEPROM wear-levelling search arguments and result
@@ -544,7 +544,7 @@ EWLFind_DataSlotAddr: 1
 EWLFind_Ix: 1
 EWLFind_SeqNumber: 1
 EWLFind_NextIx: 1
-EWLFindSize
+EWLFindSize:
         ENDC
 
 ; Last Used Pattern record in EEPROM wear levelling data slot
@@ -556,9 +556,9 @@ EWLFindSize
 ; memory with frequently updated data, both the data and its location
 ; is spread over many bytes in EEPROM.
         CBLOCK 0
-LUPRec_BankIx     ; 255 if referencing a Favourite pattern
-LUPRec_PatternIx  ; (or FavouriteIx)
-LUPRecSize        ; Program code currently expects the the size to be 2.
+LUPRec_BankIx: 1      ; 255 if referencing a Favourite pattern
+LUPRec_PatternIx: 1   ; (or FavouriteIx)
+LUPRecSize:           ; Program code currently expects the the size to be 2.
         ENDC
 
 ; Favourite pattern record in EEPROM wear levelling data slot
@@ -572,9 +572,9 @@ LUPRecSize        ; Program code currently expects the the size to be 2.
 ; bit ones (0xFF, 0xFF) is used in a ring that is less than full to mark
 ; the end of the Favourites list.
         CBLOCK 0
-FavRec_BankIx
-FavRec_PatternIx
-FavRecSize        ; Program code currently expects the the size to be 2.
+FavRec_BankIx: 1
+FavRec_PatternIx: 1
+FavRecSize:       ; Program code currently expects the the size to be 2.
         ENDC
 
 ; Byte-Addressed Program Memory pointer
@@ -585,7 +585,7 @@ FavRecSize        ; Program code currently expects the the size to be 2.
         CBLOCK 0
 BAPM_Status: 1  ; Remember to clear BAPM_BIT_CACHED when modifying.
 BAPM_OddFrag: 1
-BAPMSize
+BAPMSize:
         ENDC
 
 ; Division-by-7 working space
@@ -600,7 +600,7 @@ Div7_Remainder: 2
 Div7_DDL: 1
 Div7_DDH: 1
 Div7_DDE: 1
-Div7Size
+Div7Size:
         ENDC
 
 ; Palette mapping working variables
@@ -615,7 +615,7 @@ MapWS_MapPtr: 2
 MapWS_SourceBAPMStatus: 1
 MapWS_MapBAPMStatus: 1
 MapWS_NumEntries: 1
-MapWSSize
+MapWSSize:
         ENDC
 
 ; General animation state
@@ -637,7 +637,7 @@ GAS_FramePWMCycleCounter: 1
 ; Automatically set during animation
 GAS_FramePeriod: 1
 GAS_ExpPatFramePtr: 2
-GASSize
+GASSize:
         ENDC
 
 ; Phase-correct Pulse-Width Modulation state
@@ -667,7 +667,7 @@ PCPWM9_LED1_Blue_Ctr0: 1
 PCPWM9_LED1_Blue_Ctr1: 1
 PCPWM9_IORegA_Delta: 1
 PCPWM9_IORegB_Delta: 1
-PCPWM9Size
+PCPWM9Size:
         ENDC
 
 
@@ -695,14 +695,14 @@ EEPROM_FavStatusRing: FAVOURITES_NUM_SLOTS
 EEPROM_FavDataRing: 2 * FAVOURITES_NUM_SLOTS
 EEPROM_LUPStatusRing: LUPEWL_NUM_SLOTS
 EEPROM_LUPDataRing: 2 * LUPEWL_NUM_SLOTS
-EEPROM_END
+EEPROM_END:
         ENDC
 
   if EEPROM_END > 256
     error "EEPROM memory limit exceeded."
   endif
 
-EEPROM_LOW_CONFIG_AREA_SIZE = 3
+EEPROM_LOW_CONFIG_AREA_SIZE equ 3
 
 
 ;------------------------------------------------------------------------------
@@ -2444,7 +2444,7 @@ _FAFD24_NullDelta:
 ;------------------------------------------------------------------------------
 
 
-INCLUDE_DF12B = 0
+INCLUDE_DF12B equ 0
 
   if INCLUDE_DF12B
 FetchAnimFrame_Delta_12b:
@@ -3989,7 +3989,7 @@ WaitForReleaseOfAllButtons:
         ; Given that the system clock is set to 16MHz (implying 4MIPS),
         ; LoopCtr1:LoopCtr0 will be set to the required release debounce
         ; time in milliseconds.
-_WfRoABs_Restart
+_WfRoABs_Restart:
 ctrv = 8 * DEBOUNCE_RELEASE_TIME
   if ctrv > 65535
     error "DEBOUNCE_RELEASE_TIME is too large."
@@ -6555,7 +6555,7 @@ morse_question macro
         morse_letter_space
   endm
 
-INCLUDE_MORSE = 0
+INCLUDE_MORSE equ 0
 
   if INCLUDE_MORSE
 
