@@ -6572,7 +6572,7 @@ INCLUDE_MORSE equ 0
 ;  UFP  Period    Linear Speed
 ;   1    0.85s  12.4m/s, 44.6km/h
 ;   2    1.71s   6.2m/s, 22.3km/h
-;   3    2.56s   4.1m/s,  14.9km/h
+;   3    2.56s   4.1m/s, 14.9km/h
 
 BAPM_Frs_Morse:
         bablock
