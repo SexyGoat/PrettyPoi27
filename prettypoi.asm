@@ -223,7 +223,6 @@
 ;     LoadLEDOCRs
 ;   Pattern player - Low level:
 ;     LoadMappedPalette
-;     LoadMappedPalette
 ;     FetchAnimFrame_Common
 ;     FetchAnimFrame_Delta_24b
 ;     (FetchAnimFrame_Delta_12b) - Presently unused by code for PIC16F1827
@@ -3190,7 +3189,6 @@ UpdateEffectiveRampsIx:
 ;     UserRampsIx
 ; Out: EffectiveRampsIx
 
-        ; The display format is one of the External Ramp type.
         movf    PatternRampsIx, W
         andlw   RAMPS_MASK
         movwf   EffectiveRampsIx
