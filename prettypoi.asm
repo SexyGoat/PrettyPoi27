@@ -5,7 +5,7 @@
 
 
 ; PrettyPoi27 firmware for Ninja LED stick poi
-; Version: 0.9.1.3
+; Version: 0.9.1.4
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -1547,9 +1547,10 @@ FindCurrentEWLIndex:
 ; number x isn't followed (in the Status Ring) by a sequence number
 ; that is congruent to x + 1 modulo 256. (The search will always
 ; return the correct result for any ring length from 1 to 255 and
-; will work consistently whatever the initial state of the EEPROM.)
+; will likely work consistently whatever the initial state of the
+; EEPROM.)
 ;
-; In:  FSR0 = EWL access object, initialised (except for current index)
+; In: FSR0 = EWL access object, initialised (except for current index)
 ; Out: EWL access object updated with the current index.
 ;      W = EWLFind.EWLFind_Ix = Current index
 
@@ -1597,7 +1598,7 @@ GetEWLDataAddress:
 ; then call AdvanceEWLStatusRing. If a power loss occurs, the new
 ; (and likely incomplete) entry will be safely ignored.
 ;
-; In:  FSR0 = EWL access object
+; In: FSR0 = EWL access object
 ;      W = Slot index
 ; Out: EWLFind.EWLFind_DataSlotAddr = Data slot address for the given index
 ;      W = Validated slot index
@@ -1642,7 +1643,7 @@ AdvanceEWLStatusRing:
 ; index (the one corresponding to the new entry), a sequence number
 ; which properly follows the current slot's sequence number.
 ;
-; In:  FSR0 = EWL access object
+; In: FSR0 = EWL access object
 ; Out: W = Updated slot index (already stored at FSR0)
 
         moviw   EWLAccess_CurrentIndex[FSR0]
@@ -4485,8 +4486,6 @@ _Main_ManuallySetBaP_CueWrap:
 _Main_ManuallySetBaP:
         btfss   ModeFlags, MF_BIT_LUPLOCKED
         call    SaveLastUsedPattern
-        ;~ call    _Main_SetBankPatRampStuff
-        ;~ bra     _Main_BankAndPatternSet
 _Main_ProgSetBaP:
         call    _Main_SetBankPatRampStuff
 _Main_BankAndPatternSet:
@@ -4714,7 +4713,7 @@ _CondInitE_ReadLoop:
         retlw   0
         decfsz  LoopCtr0, F
         bra     _CondInitE_ReadLoop
-        ; All 255s is in invalid state which implies a virgin EEPROM.
+        ; All 255s is an invalid state which implies a virgin EEPROM.
         ; First set the default brightness.
         movlw   EEPROM_Brightness
         movwf   EEPROMPtr
