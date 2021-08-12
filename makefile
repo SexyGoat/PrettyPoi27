@@ -1,4 +1,4 @@
-# Makefile for PrettyPoi (prettypoi.asm)
+# Makefile for PrettyPoi27 (prettypoi.asm)
 
 # (c) Copyright 2021, Daniel Neville
 
