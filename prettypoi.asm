@@ -5,7 +5,7 @@
 
 
 ; PrettyPoi27 firmware for Ninja LED stick poi
-; Version: 0.9.1.4
+; Version: 0.9.1.5
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -379,42 +379,42 @@ UPB_LATCH       equ UPB('A', 2)
 UPB_SENSE       equ UPB('A', 1)
 
 sfrm = 0
-sfrm = sfrm | (1 << UPB_LED3_RED)
-sfrm = sfrm | (1 << UPB_LED3_GREEN)
-sfrm = sfrm | (1 << UPB_LED3_BLUE)
+sfrm |= (1 << UPB_LED3_RED)
+sfrm |= (1 << UPB_LED3_GREEN)
+sfrm |= (1 << UPB_LED3_BLUE)
 UPM_LED3 equ sfrm
 
 sfrm = 0
-sfrm = sfrm | (1 << UPB_LED2_RED)
-sfrm = sfrm | (1 << UPB_LED2_GREEN)
-sfrm = sfrm | (1 << UPB_LED2_BLUE)
+sfrm |= (1 << UPB_LED2_RED)
+sfrm |= (1 << UPB_LED2_GREEN)
+sfrm |= (1 << UPB_LED2_BLUE)
 UPM_LED2 equ sfrm
 
 sfrm = 0
-sfrm = sfrm | (1 << UPB_LED1_RED)
-sfrm = sfrm | (1 << UPB_LED1_GREEN)
-sfrm = sfrm | (1 << UPB_LED1_BLUE)
+sfrm |= (1 << UPB_LED1_RED)
+sfrm |= (1 << UPB_LED1_GREEN)
+sfrm |= (1 << UPB_LED1_BLUE)
 UPM_LED1 equ sfrm
 
 sfrm = 0
-sfrm = sfrm | (UPM_LED3)
-sfrm = sfrm | (UPM_LED2)
-sfrm = sfrm | (UPM_LED1)
+sfrm |= (UPM_LED3)
+sfrm |= (UPM_LED2)
+sfrm |= (UPM_LED1)
 UPM_ALL_LEDS equ sfrm
 
 sfrm = 0
-sfrm = sfrm | (UPB_MODE_BUTTON)
-sfrm = sfrm | (UPB_PAT_BUTTON)
+sfrm |= (UPB_MODE_BUTTON)
+sfrm |= (UPB_PAT_BUTTON)
 UPM_ALL_BUTTONS equ sfrm
 
 sfrm = 0
-sfrm = sfrm | (1 << UPB_LATCH)
-sfrm = sfrm | UPM_ALL_LEDS
+sfrm |= (1 << UPB_LATCH)
+sfrm |= UPM_ALL_LEDS
 UPM_ALL_OUPUTS equ sfrm
 
 sfrm = 0
-sfrm = sfrm | (1 << UPB_SENSE)
-sfrm = sfrm | UPM_ALL_BUTTONS
+sfrm |= (1 << UPB_SENSE)
+sfrm |= UPM_ALL_BUTTONS
 UPM_ALL_INPUTS equ sfrm
 
 
@@ -452,9 +452,9 @@ MF_BIT_FAVPROTECT       equ 1  ; Favourites list cannot be altered.
 MF_BIT_RESTRICTED       equ 0  ; Bank cannot be changed.
 
 x = 0
-x = x | (1 << MF_BIT_LUPLOCKED)
-x = x | (1 << MF_BIT_FAVPROTECT)
-x = x | (1 << MF_BIT_RESTRICTED)
+x |= (1 << MF_BIT_LUPLOCKED)
+x |= (1 << MF_BIT_FAVPROTECT)
+x |= (1 << MF_BIT_RESTRICTED)
 MF_MASK_RESTRICTIONS    equ x
 
 ; Byte-Addressed Program Memory pointer status byte
@@ -677,8 +677,9 @@ PCPWM9Size:
 
 ; The standard initial EEPROM state expected by the application is all
 ; bit ones (0xFF), though Intel hex files may show an unprogrammed byte
-; as "FF00" to be consistent with the 14-bit program memory format. Any
-; initial EEPROM state is harmless to the application.
+; as "FF00" to be consistent with the 14-bit program memory format.
+; To present spurious advancement of the EEPROM Wear-Levelling rings,
+; the EEPROM should be reset to the 0xFF in each byte,
 
 FAVOURITES_NUM_SLOTS  equ 12
 LUPEWL_NUM_SLOTS      equ 71  ; Last Used Pattern EEPROM wear levelling
@@ -1342,7 +1343,7 @@ AddBAPMOffset:
 ;     Div7Rec.Div7_Dividend = Byte offset to add (16 bits unsigned)
 ; Out: FSR0, BAPMRec = Target byte address in Program Memory
 ;      Div7Rec modified (including quotient, sometimes)
-;
+
 ; Neither the the base address nor the beginning of the group-of-7
 ; implied by FSR0 and BAPMRec need be a multiple of 7 from 0x8000,
 ; the start of program memory. The byte offset within the Status
@@ -6330,21 +6331,21 @@ num_frames = 0
 morse_dash macro
         pf4c      3,   1,  1,  1
         pf4c      1,   0,  0,  0
-num_frames = num_frames + 2
+num_frames += 2
   endm
 morse_dot macro
         pf4c      1,   2,  2,  2
         pf4c      1,   0,  0,  0
-num_frames = num_frames + 2
+num_frames += 2
   endm
 morse_letter_space macro
         pf4c      2,   0,  0,  0
-num_frames = num_frames + 1
+num_frames += 1
   endm
 morse_word_space macro
         pf4c      3,   0,  0,  0
         pf4c      3,   0,  0,  0
-num_frames = num_frames + 2
+num_frames += 2
   endm
 morse_A macro
         morse_dot
@@ -7129,16 +7130,16 @@ Page1WordsFree = 0x1000 - Page1CodeEnd
 ;   7:~CP, 6:MCLRE, 5:~PWRTE, [4:3]:WDTE[1:0], [2:0]:FOSC[2:0]
 
 cw1 = 0x3FFF
-cw1 = cw1 & _FCMEN_OFF
-cw1 = cw1 & _IESO_ON
-cw1 = cw1 & _CLKOUTEN_OFF
-cw1 = cw1 & _BOREN_ON
-cw1 = cw1 & _CPD_OFF
-cw1 = cw1 & _CP_OFF
-cw1 = cw1 & _MCLRE_ON
-cw1 = cw1 & _PWRTE_ON
-cw1 = cw1 & _WDTE_OFF
-cw1 = cw1 & _FOSC_INTOSC
+cw1 &= _FCMEN_OFF
+cw1 &= _IESO_ON
+cw1 &= _CLKOUTEN_OFF
+cw1 &= _BOREN_ON
+cw1 &= _CPD_OFF
+cw1 &= _CP_OFF
+cw1 &= _MCLRE_ON
+cw1 &= _PWRTE_ON
+cw1 &= _WDTE_OFF
+cw1 &= _FOSC_INTOSC
 
         __CONFIG _CONFIG1, cw1  ; 0x1FC4
 
@@ -7148,12 +7149,12 @@ cw1 = cw1 & _FOSC_INTOSC
 ;   [7:5]:Unused, 4:Reserved, [3:2]:Unused, [1:0]:WRT[1:0]
 
 cw2 = 0x3FFF
-cw2 = cw2 & _LVP_OFF
-cw2 = cw2 & _DEBUG_OFF
-cw2 = cw2 & _BORV_LO
-cw2 = cw2 & _STVREN_OFF
-cw2 = cw2 & _PLLEN_ON
-cw2 = cw2 & _WRT_OFF
+cw2 &= _LVP_OFF
+cw2 &= _DEBUG_OFF
+cw2 &= _BORV_LO
+cw2 &= _STVREN_OFF
+cw2 &= _PLLEN_ON
+cw2 &= _WRT_OFF
 
         __CONFIG _CONFIG2, cw2  ; 0x1DFF
 
