@@ -93,7 +93,10 @@ def main():
   print("  ; Special colours")
   fmt = "  ;enumdat {:<9}dbvrgb, 0x{:06X}  ; {:>2}: {}"
   for enumname, z, desc in [
+    ("RED3",  0x080000, "Darkest Red"),
+    ("ORA3",  0x090100, "Darkest Orange"),
     ("GRN3",  0x000800, "Darkest Green"),
+    ("BLU3",  0x000008, "Darkest Blue"),
   ]:
     cmmtfield = ["",": "][desc != ""] + desc
     print(fmt.format(enumname + ",", x, clix, cmmtfield))

@@ -5,7 +5,7 @@
 
 
 ; PrettyPoi27 firmware for Ninja LED stick poi
-; Version: 0.9.1.5
+; Version: 0.9.3.1
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -37,10 +37,14 @@
 ;     cameras with long open shutter times.
 ;   * Favourite patterns can be stored and reordered.
 ;   * A brightness control is provided via a boot menu. (The default is 5/5.)
-;   * The updating of the Last Used Pattern memory can be switched on or offf
+;   * The updating of the Last Used Pattern memory can be switched on or off
 ;     via the boot menu.
-;   * Via a boot menu option, the Favourites list can be locked and
-;     the Mode Button may additionally be disabled.
+;   * Via a boot menu option, the Favourites list can be locked and switching
+;     between banks of patterns may additionally be disabled.
+;   * When the Favourites list is full, adding a new item is inhibited in
+;     to protect existing items from being pushed off the end of the list.
+;     This protection feature may be disabled by choosing the most permissive
+;     setting in the Restrictions boot menu.
 ;   * A Slideshow (auto-advance) mode, with one of three switching intervals,
 ;     may be activated for any bank of patterns, including the Favourites
 ;     list. The Mode Button still works as usual in Slideshow mode, without
@@ -51,14 +55,14 @@
 ;   * A short press of the Mode Button (longer than a tap) jumps to the
 ;     Favourites list, if any Favourites entries exist, otherwise to the
 ;     first bank of preset patterns.
+;   * A short cue is displayed when a Pattern or Mode selection wraps around.
+;     (but only as a result of a button press).
 ;   * The last two banks of patterns are all uniformly coloured with whatever
 ;     pair of colour ramps have been selected by the user in the boot menu.
 ;     When one of those patterns is saved to the Favourites list, the index
-;     of currently selected colour ramp pair is stored within the Favourite
-;     recorded that is aved. Choosing a new colour ramp pair won't alter the
-;     appearance of patterns already saved in Favourites.
-;   * A short cue is displayed when a Pattern or Mode selection wraps around.
-;     (but only as a result of a button press).
+;     of the currently selected colour ramp pair is stored with the Favourite
+;     record saved. Choosing a new colour ramp pair won't alter the appearance
+;     of patterns already saved in Favourites.
 ;
 ; There are a few technical improvements:
 ;
@@ -177,6 +181,7 @@
 ; Includes
 ; Pin assignments
 ; Constants
+; Derived timing constants (and limit checks)
 ; Structures
 ; EEPROM addresses
 ; Variables in SRAM
@@ -254,7 +259,7 @@
 ;     GetFavourite
 ;     SaveFavourite
 ;     SaveFavourite_HaveEWLAccess
-;     InvalidateFavIx
+;     ClampOrInvalidateFavIx
 ;     PromoteOrDelFavourite_Common
 ;     PromoteFavourite
 ;     DeleteFavourite
@@ -286,7 +291,6 @@
 ;   System cues and menus (partially moved to Page 0)
 ;   Basic palette, enumerated
 ;   Ramp pairs (palette mappings to be applied to suitable patterns)
-;   Ramp pairs address table, enumerated
 ;   Patterns
 ;   Pattern address table, enumerated
 ;   Pattern banks
@@ -297,8 +301,9 @@
 ;------------------------------------------------------------------------------
 
 
-        ; The processor (MCU) type can be specified here or via the
-        ; command line. E.g: "gpasm -p p16f1827 prettypoi.asm"
+        ; The processor (MCU) type can be specified here
+        ; or via the (overriding) command line option.
+        ; E.g: "gpasm -p p16f1847 prettypoi.asm"
 
         ;PROCESSOR PIC16F1827
 
@@ -424,7 +429,6 @@ UPM_ALL_INPUTS equ sfrm
 
 
 TURNON_HOLDTIME         equ 1000  ; milliseconds
-
 DEBOUNCE_PRESS_TIME     equ 40    ; milliseconds
 DEBOUNCE_RELEASE_TIME   equ 60    ; milliseconds
 
@@ -447,19 +451,23 @@ FCF_BIT_DELTA           equ 7  ; 0 => Load, 1 => Delta
 ; Mode flags
 MF_BIT_CUE              equ 7  ; A system feedback cue is playing.
 MF_BIT_SLIDESHOW        equ 6  ; Slideshow mode is active.
+MF_BIT_NOFAVSPILL       equ 3  ; Adding a new Favourite requires a free slot.
 MF_BIT_LUPLOCKED        equ 2  ; Last Used Pattern record no longer updated.
 MF_BIT_FAVPROTECT       equ 1  ; Favourites list cannot be altered.
 MF_BIT_RESTRICTED       equ 0  ; Bank cannot be changed.
 
 x = 0
+x |= (1 << MF_BIT_NOFAVSPILL)
 x |= (1 << MF_BIT_LUPLOCKED)
 x |= (1 << MF_BIT_FAVPROTECT)
 x |= (1 << MF_BIT_RESTRICTED)
 MF_MASK_RESTRICTIONS    equ x
 
+DEFAULT_LOCK_BITS       equ (1 << MF_BIT_NOFAVSPILL)
+
 ; Byte-Addressed Program Memory pointer status byte
 BAPM_BIT_CACHED         equ 7  ; Part of an odd byte was fetched earlier
-BAPM_BIT_LOW_BYTES_ONLY equ 3  ; Signals plaing, non-BAPM mode
+BAPM_BIT_LOW_BYTES_ONLY equ 3  ; Signals plain, non-BAPM mode
 BAPM_BIT_OFFSET0        equ 0  ; Byte index 0..6 within 4-word group
 
 ; Pattern display formats
@@ -512,9 +520,73 @@ PWM_CYCLE_FREQUENCY   equ 443  ; Hz,
 SLIDESHOW_INTERVAL_1  equ 3000   ; milliseconds
 SLIDESHOW_INTERVAL_2  equ 7000   ; milliseconds
 SLIDESHOW_INTERVAL_3  equ 15000  ; milliseconds
-SLIDESHOW_INTV_1_PWM_CYCLES equ SLIDESHOW_INTERVAL_1 * PWM_CYCLE_FREQUENCY/1000
-SLIDESHOW_INTV_2_PWM_CYCLES equ SLIDESHOW_INTERVAL_2 * PWM_CYCLE_FREQUENCY/1000
-SLIDESHOW_INTV_3_PWM_CYCLES equ SLIDESHOW_INTERVAL_3 * PWM_CYCLE_FREQUENCY/1000
+
+
+;------------------------------------------------------------------------------
+; Derived timing constants (and limit checks)
+;------------------------------------------------------------------------------
+
+
+  if TURNON_HOLDTIME > 65535
+    error "TURNON_HOLDTIME is too large."
+  else
+    if TURNON_HOLDTIME < 1
+      error "TURNON_HOLDTIME is too small."
+    endif
+  endif
+
+DEBOUNCE_PRESS_TIME_X8 equ 8 * DEBOUNCE_PRESS_TIME
+  if DEBOUNCE_PRESS_TIME_X8 > 65535
+    error "DEBOUNCE_PRESS_TIME is too large."
+  else
+    if DEBOUNCE_PRESS_TIME_X8 < 1
+      error "DEBOUNCE_PRESS_TIME is too small."
+    endif
+  endif
+
+DEBOUNCE_RELEASE_TIME_X8 equ 8 * DEBOUNCE_RELEASE_TIME
+  if DEBOUNCE_RELEASE_TIME_X8 > 65535
+    error "DEBOUNCE_RELEASE_TIME is too large."
+  else
+    if DEBOUNCE_RELEASE_TIME_X8 < 1
+      error "DEBOUNCE_RELEASE_TIME is too small."
+    endif
+  endif
+
+DB_RELEASE_TIME_PWM_CYCLES = DEBOUNCE_RELEASE_TIME * PWM_CYCLE_FREQUENCY / 1000
+  if DB_RELEASE_TIME_PWM_CYCLES > 255
+    error "DEBOUNCE_RELEASE_TIME is too large."
+  else
+    if DB_RELEASE_TIME_PWM_CYCLES < 1
+      error "DEBOUNCE_RELEASE_TIME is too small."
+    endif
+  endif
+
+SSHOW_INTV_1_PWM_CYCLES_14 equ SLIDESHOW_INTERVAL_1 * PWM_CYCLE_FREQUENCY/1000
+SSHOW_INTV_2_PWM_CYCLES_14 equ SLIDESHOW_INTERVAL_2 * PWM_CYCLE_FREQUENCY/1000
+SSHOW_INTV_3_PWM_CYCLES_14 equ SLIDESHOW_INTERVAL_3 * PWM_CYCLE_FREQUENCY/1000
+
+  if SSHOW_INTV_1_PWM_CYCLES_14 > 16383
+    error "SLIDESHOW_INTERVAL_1 is too large."
+  else
+    if SSHOW_INTV_1_PWM_CYCLES_14 < 1
+      error "SLIDESHOW_INTERVAL_1 is too small."
+    endif
+  endif
+  if SSHOW_INTV_2_PWM_CYCLES_14 > 16383
+    error "SLIDESHOW_INTERVAL_2 is too large."
+  else
+    if SSHOW_INTV_2_PWM_CYCLES_14 < 1
+      error "SLIDESHOW_INTERVAL_2 is too small."
+    endif
+  endif
+  if SSHOW_INTV_3_PWM_CYCLES_14 > 16383
+    error "SLIDESHOW_INTERVAL_3 is too large."
+  else
+    if SSHOW_INTV_3_PWM_CYCLES_14 < 1
+      error "SLIDESHOW_INTERVAL_3 is too small."
+    endif
+  endif
 
 
 ;------------------------------------------------------------------------------
@@ -681,28 +753,25 @@ PCPWM9Size:
 ; To present spurious advancement of the EEPROM Wear-Levelling rings,
 ; the EEPROM should be reset to the 0xFF in each byte,
 
-FAVOURITES_NUM_SLOTS  equ 12
-LUPEWL_NUM_SLOTS      equ 71  ; Last Used Pattern EEPROM wear levelling
+FAVOURITES_NUM_SLOTS  equ 16
+LUPEWL_NUM_SLOTS      equ 67  ; Last Used Pattern EEPROM wear levelling
 
         CBLOCK  0x00
 EEPROM_PROBABLY_WORN_OUT_BY_NOW: 2  ; Probably worn out by the NS-2 V1.2
-EEPROM_LOW_CONFIG_AREA: 0
 EEPROM_LockBits: 1
 EEPROM_Brightness: 1
 EEPROM_RampsIndex: 1
 EEPROM_UNUSED: 1
 EEPROM_FavStatusRing: FAVOURITES_NUM_SLOTS
-EEPROM_FavDataRing: 2 * FAVOURITES_NUM_SLOTS
+EEPROM_FavDataRing: FavRecSize * FAVOURITES_NUM_SLOTS
 EEPROM_LUPStatusRing: LUPEWL_NUM_SLOTS
-EEPROM_LUPDataRing: 2 * LUPEWL_NUM_SLOTS
+EEPROM_LUPDataRing: LUPRecSize * LUPEWL_NUM_SLOTS
 EEPROM_END:
         ENDC
 
   if EEPROM_END > 256
     error "EEPROM memory limit exceeded."
   endif
-
-EEPROM_LOW_CONFIG_AREA_SIZE equ 3
 
 
 ;------------------------------------------------------------------------------
@@ -904,6 +973,11 @@ sfrm = (1 << UPB_LATCH)
   if USE_FALLBACK_SHUTDOWN_CUE
 
 DelayBy325:
+; Delay by 325 MCU cycles. At 4MIPS, that comes to 81.25us.
+;
+; Out: LoopCtr1:LoopCtr0 cleared
+;      W preserved
+
         clrf    LoopCtr1
         clrf    LoopCtr0
         bsf     LoopCtr1, 6
@@ -969,7 +1043,8 @@ sfrm &= ~(0 << UPB_LED1_RED)
 
 ShutDownImmediately:
 ; Shut down right now.
-; Don't trust even the stack pointer!
+; Don't trust the stack pointer!
+
         movlb   0x01
 sfrm = ~(1 << UPB_LATCH)
         movlw   PAMASK_UPM(sfrm)
@@ -1006,13 +1081,6 @@ _MtSB_Restart:
         ; Given that the system clock is set to the default of 500kHz,
         ; LoopCtr1:LoopCtr0 will be set to the required hold time in
         ; milliseconds.
-  if TURNON_HOLDTIME > 65535
-    error "TURNON_HOLDTIME is too large."
-  else
-    if TURNON_HOLDTIME < 1
-      error "TURNON_HOLDTIME is too small."
-    endif
-  endif
         movlw   LOW(TURNON_HOLDTIME)
         movwf   LoopCtr0
         movlw   HIGH(TURNON_HOLDTIME)
@@ -1097,7 +1165,6 @@ Div7_u16:
         ;   Q2: Quotient,  high byte
         ;   Q1: Remainder,  low byte
         ;   Q0: Remainder,  high byte
-        ;
 
         ; Multiplier bit 0 and part of bit 16
         movf    Div7Rec + Div7_Dividend + 1, W
@@ -1185,7 +1252,7 @@ _Div7_LSL1AndAddAtB0:
 
 
 ReadPMHighBits:
-; Read the upper 6-bits of a 14-bit Program Memory word.
+; Read the upper 6 bits of a 14-bit Program Memory word.
 ;
 ; This routine is used by ReadBAPMByte and FetchPMWordFromTable.
 ;
@@ -2747,6 +2814,9 @@ FetchAnimFrame_Paletted_4c:
 
 
 FetchAnimFrame_Invalid:
+; This is called in the case of an unrecognised display format that wasn't
+; detected and reported properly.
+
         ; Just make a mess!
         incf    LED3Level_Green, F
         decf    LED2Level_Green, F
@@ -3120,6 +3190,8 @@ _FPL_BadPalPtr:
 
 
 GetEnumeratedSysPatAddr:
+; Fetch a system pattern's address via an 8-bit index into a table.
+;
 ; In: W = Index into PM_SysPatTable
 ; Out: FSR0 = Pattern header address
 ;      W preserved
@@ -3228,13 +3300,16 @@ ApplyExternalRamps:
         sublw   NUM_RAMP_PAIRS - 1
         btfss   STATUS, C
         retlw   0
-        movlw   LOW(PM_RampAddrTable)
+        movlw   LOW(BAPM_RampPairs)
         movwf   FSR0L
-        movlw   HIGH(PM_RampAddrTable)
+        movlw   HIGH(BAPM_RampPairs)
         movwf   FSR0H
-        movf    EffectiveRampsIx, W
-        call    FetchPMWordFromTable
-        bsf     FSR0H, 7
+        ; Each ramp pair is 7 bytes long, which comes to exactly 4 PM words.
+        lslf    EffectiveRampsIx, W
+        lslf    WREG, F
+        addwf   FSR0L, F
+        movlw   0
+        addwfc  FSR0H, F
         clrf    MapWS + MapWS_MapBAPMStatus
         movf    FSR0L, W
         movwf   MapWS + MapWS_MapPtr + 0
@@ -3428,34 +3503,6 @@ _GetPA_PatIxZeroPlus:
         movf    Scratch1, W
         return
 
-;        ; A pattern table for a bank used to contain addresses of 6-word
-;        ; pattern headers, it now contains BAPM-format byte pairs each
-;        ; consisting of a pattern header address index and a palette
-;        ; map index.
-;        clrf    BAPMRec + BAPM_Status
-;        clrf    Div7Rec + Div7_Dividend + 1
-;        lslf    PatternIx, W
-;        movwf   Div7Rec + Div7_Dividend + 0
-;        rlf     Div7Rec + Div7_Dividend + 1, F
-;        call    AddBAPMOffset
-;        call    ReadBAPMByte
-;        movwf   Scratch1
-;        call    ReadBAPMByte
-;        movwf   FSR0L
-;        movf    Scratch1, W
-;        movwf   Scratch0
-;        movf    FSR0L, W
-;        movwf   Scratch1
-;        movlw   LOW(PM_PatAddrTable)
-;        movwf   FSR0L
-;        movlw   HIGH(PM_PatAddrTable)
-;        movwf   FSR0H
-;        movf    Scratch0, W
-;        call    FetchPMWordFromTable
-;        bsf     FSR0H, 7
-;        movf    Scratch1, W
-;        return
-
 
 ;------------------------------------------------------------------------------
 ; Last Used Pattern
@@ -3526,7 +3573,12 @@ _GetLUP_SkipUnpgmd:
         ; This LUP is a reference to a Favourites slot.
         movf    PatternIx, W
         movwf   FavouriteIx
+        clrf    BankIx
+        clrf    PatternIx
+        call    ClampOrInvalidateFavIx
+        incfsz  FavouriteIx, W
         goto    GetFavourite
+        retlw   0
 
 
 ;------------------------------------------------------------------------------
@@ -3629,13 +3681,13 @@ GetFavMetrics:
 _GetFavMets_Loop:
         call    ReadEEPROMByte
         movwf   Scratch0
-        call    ReadEEPROMByte
+        call    ReadEEPROMByte  ; One step forward...
         andwf   Scratch0, F
         comf    Scratch0, F
         btfsc   STATUS, Z
         bra     _GetFavMets_HaveNumFavs
         incf    NumFavs, F
-        movlw   2 + FavRecSize
+        movlw   2 * FavRecSize  ; ...Two steps backward.
         subwf   EEPROMPtr, F
         movlw   1
         subwf   Scratch1, F
@@ -3750,11 +3802,31 @@ SaveFavourite_HaveEWLAccess:
 ;------------------------------------------------------------------------------
 
 
-InvalidateFavIx:
+ClampOrInvalidateFavIx:
+; Clamp the Favourite Pattern index to 0..NumFavs-1 or 255 if that fails.
 ; A Favourite Pattern index of 255 means that no Favourite Pattern is playing.
+;
+; Bonus feature: If there are no Favourites at all and the index wasn't
+; already 255, the Bank and Pattern indices will be reset.
 
+        incf    FavouriteIx, W
+        btfsc   STATUS, Z
+        retlw   0  ; Already safely invalidated
+        movf    NumFavs, W
+        btfsc   STATUS, Z
+        bra     _CoIFIx_Invalidate
+        subwf   FavouriteIx, W
+        btfss   STATUS, Z
+        bra     _CoIFIx_Done
+        decf    NumFavs, W
+        movwf   FavouriteIx
+_CoIFIx_Done:
+        retlw   0
+_CoIFIx_Invalidate:
         movlw   255
         movwf   FavouriteIx
+        clrf    BankIx
+        clrf    PatternIx
         retlw   0
 
 
@@ -3845,16 +3917,13 @@ PromoteFavourite:
 ;
 ; In: FavouriteIx and other stuff
 
-        movf    NumFavs, W
-        btfsc   STATUS, Z
-        goto    InvalidateFavIx
+        call    ClampOrInvalidateFavIx
         incf    FavouriteIx, W
         lsrf    WREG, F
         btfsc   STATUS, Z
         retlw   0  ; FavouriteIx is either 255 or 0
         call    PromoteOrDelFavourite_Common
         goto    SaveFavourite_HaveEWLAccess
-        retlw   0
 
 
 ;------------------------------------------------------------------------------
@@ -3867,23 +3936,12 @@ DeleteFavourite:
 ; empty, the Favourite Index will be invalidated, forcing the first standard
 ; pattern to begin playing.
 
-        movf    NumFavs, W
-        btfsc   STATUS, Z
-        goto    InvalidateFavIx
+        call    ClampOrInvalidateFavIx
         incf    FavouriteIx, W
         btfsc   STATUS, Z
         retlw   0
         call    PromoteOrDelFavourite_Common
-        movf    NumFavs, W
-        btfsc   STATUS, Z
-        goto    InvalidateFavIx
-        subwf   FavouriteIx, W
-        btfss   STATUS, Z
-        bra     _DelFav_Done
-        decf    NumFavs, W
-        movwf   FavouriteIx
-_DelFav_Done:
-        retlw   0
+        goto    ClampOrInvalidateFavIx
 
 
 ;------------------------------------------------------------------------------
@@ -3990,17 +4048,9 @@ WaitForReleaseOfAllButtons:
         ; LoopCtr1:LoopCtr0 will be set to the required release debounce
         ; time in milliseconds.
 _WfRoABs_Restart:
-ctrv = 8 * DEBOUNCE_RELEASE_TIME
-  if ctrv > 65535
-    error "DEBOUNCE_RELEASE_TIME is too large."
-  else
-    if ctrv < 1
-      error "DEBOUNCE_RELEASE_TIME is too small."
-    endif
-  endif
-        movlw   LOW(ctrv)
+        movlw   LOW(DEBOUNCE_RELEASE_TIME_X8)
         movwf   LoopCtr0
-        movlw   HIGH(ctrv)
+        movlw   HIGH(DEBOUNCE_RELEASE_TIME_X8)
         movwf   LoopCtr1
         incf    LoopCtr1, F
 _WfRoABs_Loop:
@@ -4039,17 +4089,9 @@ RegisterButtonPress:
         bsf     Scratch0, INPUT_BIT_MODE
         btfsc   PORT_REGBIT_FR(UPB_PAT_BUTTON)
         bsf     Scratch0, INPUT_BIT_PATTERN
-ctrv = 8 * DEBOUNCE_PRESS_TIME
-  if ctrv > 65535
-    error "DEBOUNCE_PRESS_TIME is too large."
-  else
-    if ctrv < 1
-      error "DEBOUNCE_PRESS_TIME is too small."
-    endif
-  endif
-        movlw   LOW(ctrv)
+        movlw   LOW(DEBOUNCE_PRESS_TIME_X8)
         movwf   LoopCtr0
-        movlw   HIGH(ctrv)
+        movlw   HIGH(DEBOUNCE_PRESS_TIME_X8)
         movwf   LoopCtr1
         incf    LoopCtr1, F
 _RegBP_DBPressLoop:
@@ -4143,15 +4185,7 @@ _AnimLP__SkipFlicker:
         clrf    PWMCycleCounter
         btfsc   PORT_REGBIT_FR(UPB_PAT_BUTTON)
         clrf    PWMCycleCounter
-dbrt = DEBOUNCE_RELEASE_TIME * PWM_CYCLE_FREQUENCY / 1000
-  if dbrt > 255
-    error "DEBOUNCE_RELEASE_TIME is too large."
-  else
-    if dbrt < 1
-      error "DEBOUNCE_RELEASE_TIME is too small."
-    endif
-  endif
-        movlw   DEBOUNCE_RELEASE_TIME * PWM_CYCLE_FREQUENCY / 1000
+        movlw   DB_RELEASE_TIME_PWM_CYCLES
         subwf   PWMCycleCounter, W
         btfss   STATUS, C
         bra     _AnimLP_Loop
@@ -4208,11 +4242,11 @@ _AnimBMO_ModeBtnPressed:
 Main:
 
         call    MashTheSnoozeButton
-        pagesel ClearLinearMemory
+        ;pagesel ClearLinearMemory
         call    ClearLinearMemory
-        pagesel ClearCommonMemory
+        ;pagesel ClearCommonMemory
         call    ClearCommonMemory
-        pagesel ConditionalyInitEEPROM
+        ;pagesel ConditionalyInitEEPROM
         call    ConditionalyInitEEPROM
         movlp   0x00
         call    ConfigureHardware
@@ -4227,20 +4261,20 @@ Main:
         movlw   SYSPAT_LPMENU_POWER_ON
         call    AnimateLongPress
         lsrf    WREG, W
-        sublw   5 - 1  ; Warning: Performs W <- argument - W.
-        btfss   STATUS, C
-        bra     _Main_SkipBootMenu
-        sublw   5 - 1 ; W' = x-(x-W) = W
+        andlw   7
         brw
         bra     _Main_SkipBootMenu
         bra     _Main_ChooseRampsSet
         bra     _Main_ChooseIntensity
         bra     _Main_ChooseLUPMode
         bra     _Main_ChooseRestrictions
+        goto    ShutDown
+        goto    ShutDown
+        ;goto    ShutDown
 
 _Main_ChooseRampsSet:
         movf    UserRampsIx, W
-        pagesel AnimateRampsIxMenu
+        ;pagesel AnimateRampsIxMenu
         call    AnimateRampsIxMenu
         movlp   0x00
         movwf   UserRampsIx
@@ -4279,6 +4313,7 @@ _Main_ChooseRestrictions:
         call    _Main_ChooseR_Bits2Ix
         call    AnimateBootMenuOption
         call    _Main_ChooseR_Ix2Bits
+        bcf     ModeFlags, MF_BIT_NOFAVSPILL
         bcf     ModeFlags, MF_BIT_RESTRICTED
         bcf     ModeFlags, MF_BIT_FAVPROTECT
         iorwf   ModeFlags, F
@@ -4286,17 +4321,23 @@ _Main_ChooseRestrictions:
         bra     _Main_SkipBootMenu
 _Main_ChooseR_Bits2Ix:
         btfsc   WREG, MF_BIT_RESTRICTED
-        retlw   2
+        retlw   3
         btfsc   WREG, MF_BIT_FAVPROTECT
+        retlw   2
+        btfsc   WREG, MF_BIT_NOFAVSPILL
         retlw   1
         retlw   0
 _Main_ChooseR_Ix2Bits:
         andlw   0x03
         brw
-        retlw   0
-        retlw   (1 << MF_BIT_FAVPROTECT)
-        retlw   (1 << MF_BIT_FAVPROTECT) | (1 << MF_BIT_RESTRICTED)
-        retlw   0
+x = 0
+        retlw   x
+x |= (1 << MF_BIT_NOFAVSPILL)
+        retlw   x
+x |= (1 << MF_BIT_FAVPROTECT)
+        retlw   x
+x |= (1 << MF_BIT_RESTRICTED)
+        retlw   x
 
 _Main_SkipBootMenu:
 
@@ -4320,7 +4361,7 @@ _Main_ButtonPress:
         btfss   WREG, INPUT_BIT_PATTERN
         bra     _Main_SkipButtonPress
 _Main_PatBtnPressed:
-        call    _Main_LoadSlideshowCountdown
+        call    _Main_LoadSlideshowCtr
         btfsc   ModeFlags, MF_BIT_SLIDESHOW
         bra     _Main_PatBtnPressed_SS
         incfsz  FavouriteIx, W
@@ -4330,8 +4371,24 @@ _Main_PatBtnPressed_Std:
         bra     _Main_PatBP_Std_Restricted
         btfsc   ModeFlags, MF_BIT_FAVPROTECT
         bra     _Main_PatBP_Std_Restricted
+        btfss   ModeFlags, MF_BIT_NOFAVSPILL
+        bra     _Main_PatBP_Std_SavePermitted
+        movlw   FAVOURITES_NUM_SLOTS
+        subwf   NumFavs, W
+        btfss   STATUS, C
+        bra     _Main_PatBP_Std_SavePermitted
+_Main_PatBP_Std_FavsFull:
+        movlw   SYSPAT_LPMENU_FAVS_FULL
+        call    AnimateLongPress
+        sublw   4 - 3
+        btfss   STATUS, C
+        bra     _Main_ProgSetBaP
+        sublw   4 - 3  ; Restore W
+        bra     _Main_PatBP_Std_PreLookup
+_Main_PatBP_Std_SavePermitted:
         movlw   SYSPAT_LPMENU_SAVE_FAV
         call    AnimateLongPress
+_Main_PatBP_Std_PreLookup:
         lsrf    WREG, F
         andlw   0x07
 _Main_PatBP_Std_Lookup:
@@ -4435,10 +4492,10 @@ _Main_StartSS2:
 _Main_StartSS3:
         bsf     ModeFlags, MF_BIT_SLIDESHOW
         movwf   SlideshowIntervalIx
-        call    _Main_LoadSlideshowCountdown
+        call    _Main_LoadSlideshowCtr
         bra     _Main_ProgSetBaP
 _Main_ModeBtnPressed:
-        call    _Main_LoadSlideshowCountdown
+        call    _Main_LoadSlideshowCtr
         movlw   SYSPAT_LPMENU_MODE
         call    AnimateLongPress
         lsrf    WREG, W
@@ -4451,7 +4508,6 @@ _Main_JumpToFavs:
         clrf    BankIx
         bra     _Main_FinishJumpToFavsOrBank0
 _Main_AdvBank:
-        call    WaitForReleaseOfAllButtons
         incfsz  FavouriteIx, W
         bra     _Main_AdvBank_Fav
 _Main_AdvBank_Std:
@@ -4560,7 +4616,7 @@ _Main_SSAdv_Common:
         call    LoadPattern
         call    UpdateEffectiveRampsIx
         call    ApplyExternalRamps
-        call    _Main_LoadSlideshowCountdown
+        call    _Main_LoadSlideshowCtr
         bra     _Main_Loop
 
 _Main_AnimateCue:
@@ -4602,8 +4658,7 @@ _Main_Cue_Common:
         bsf     ModeFlags, MF_BIT_CUE
         retlw   0
 
-_Main_LoadSlideshowCountdown:
-; In: W = Slideshow interval index
+_Main_LoadSlideshowCtr:
         movlw   LOW(PM_SlideshowIntvTable)
         movwf   FSR0L
         movlw   HIGH(PM_SlideshowIntvTable)
@@ -4617,27 +4672,11 @@ _Main_LoadSlideshowCountdown:
         movwf   SlideshowCounter + 1
         retlw   0
 
-  if SLIDESHOW_INTV_1_PWM_CYCLES > 65535
-    error "SLIDESHOW_INTV_1_PWM_CYCLES is too large."
-  else
-    if SLIDESHOW_INTV_1_PWM_CYCLES < 1
-      error "SLIDESHOW_INTV_1_PWM_CYCLES is too small."
-    endif
-  endif
-  if SLIDESHOW_INTV_2_PWM_CYCLES > 65535
-    error "SLIDESHOW_INTV_2_PWM_CYCLES is too large."
-  else
-    if SLIDESHOW_INTV_2_PWM_CYCLES < 1
-      error "SLIDESHOW_INTV_2_PWM_CYCLES is too small."
-    endif
-  endif
-  if SLIDESHOW_INTV_3_PWM_CYCLES > 65535
-    error "SLIDESHOW_INTV_3_PWM_CYCLES is too large."
-  else
-    if SLIDESHOW_INTV_3_PWM_CYCLES < 1
-      error "SLIDESHOW_INTV_3_PWM_CYCLES is too small."
-    endif
-  endif
+PM_SlideshowIntvTable:
+        dw  0
+        dw  SSHOW_INTV_1_PWM_CYCLES_14
+        dw  SSHOW_INTV_2_PWM_CYCLES_14
+        dw  SSHOW_INTV_3_PWM_CYCLES_14
 
 
 ;==============================================================================
@@ -4696,52 +4735,45 @@ _ClearCMem_Loop:
 
 
 ConditionalyInitEEPROM:
-; If the lower poi configuration bytes in EEPROM are all 255s (unprogrammed),
-; assume the whole EEPROM is uninitialised and prepare a sensible starting
+; If a particular poi configuration byte in EEPROM looks unprogrammed,
+; assume the whole EEPROM is unprogrammed and prepare a sensible starting
 ; configuration.
 
-        movlp   0x00
-        movlw   EEPROM_LOW_CONFIG_AREA
+        ;movlp   0x00
+        movlw   EEPROM_Brightness
         movwf   EEPROMPtr
-        movlw   EEPROM_LOW_CONFIG_AREA_SIZE
-        movwf   LoopCtr0
-_CondInitE_ReadLoop:
         call    ReadEEPROMByte
         incf    WREG, F
         btfss   STATUS, Z
         retlw   0
-        decfsz  LoopCtr0, F
-        bra     _CondInitE_ReadLoop
-        ; All 255s is an invalid state which implies a virgin EEPROM.
-        ; First set the default brightness.
-        movlw   EEPROM_Brightness
-        movwf   EEPROMPtr
-        movlw   DEFAULT_INTENSITY_IX
-        call    WriteEEPROMByte
-        ; Set a sensible default Last Used Pattern.
-        ; That means also adjusting the LUP EWL status ring.
-        ; The Favourites ring can be left as all 255s.
-        movlw   LOW(_CondInitE_AddrsToClear)
+        ; 255 is not a sensible value for this byte.
+        ; Assume the EEPROM is full of 255s.
+        ; (The Favourites EWL Data Ring can be left as all 255s)
+        movlw   LOW(_CondInitE_BAPM_Pokes)
         movwf   FSR0L
-        movlw   HIGH(_CondInitE_AddrsToClear)
+        movlw   HIGH(_CondInitE_BAPM_Pokes)
         movwf   FSR0H
-        movlw   _CondInitE_AddrsToClear_End - _CondInitE_AddrsToClear
+        clrf    BAPMRec + BAPM_Status
+        movlw   _CondInitE_NUM_POKES
         movwf   LoopCtr0
-_CondInitE_ClearLoop:
-        moviw   FSR0++
+_CondInitE_InitLoop:
+        call    ReadBAPMByte
         movwf   EEPROMPtr
-        clrw
+        call    ReadBAPMByte
         call    WriteEEPROMByte
         decfsz  LoopCtr0, F
-        bra     _CondInitE_ClearLoop
+        bra     _CondInitE_InitLoop
         retlw   0
-_CondInitE_AddrsToClear:
-        dw      EEPROM_LockBits
-        dw      EEPROM_RampsIndex
-        dw      EEPROM_LUPStatusRing
-        dw      EEPROM_LUPDataRing + 0
-        dw      EEPROM_LUPDataRing + 1
-_CondInitE_AddrsToClear_End:
+_CondInitE_BAPM_Pokes:
+        bablock
+        dbv2b   EEPROM_Brightness, DEFAULT_INTENSITY_IX
+        dbv2b   EEPROM_RampsIndex, 0
+        dbv2b   EEPROM_LockBits, DEFAULT_LOCK_BITS
+        dbv2b   EEPROM_LUPStatusRing, 0
+        dbv2b   EEPROM_LUPDataRing + 0, 0
+        dbv2b   EEPROM_LUPDataRing + 1, 0
+_CondInitE_NUM_POKES equ BAPM_BYTE_OFFSET / 2
+        endbab
 
 
 ;------------------------------------------------------------------------------
@@ -4754,7 +4786,7 @@ AnimateRampsIxMenu:
 ; Out: W = Selected User ramp index
 
         movwf   EffectiveRampsIx
-        movlp   0x00
+        ;movlp   0x00
         movlw   SYSPAT_RAMPS_VIEWER
         call    GetEnumeratedSysPatAddr
         call    LoadPattern
@@ -4810,7 +4842,7 @@ BAPM_Pal_System:
   enumdat SYS_XRED,   dbvrgb, 0xFF0000  ; Full Red
   enumdat SYS_GRN1,   dbvrgb, 0x005000  ; Medium Green
   ;enumdat SYS_VIO,    dbvrgb, 0x1F0038  ; Violet
-  ;enumdat SYS_SKY,    dbvrgb, 0x00112E  ; Sky Blue
+  enumdat SYS_SKY,    dbvrgb, 0x00112E  ; Sky Blue
   enumdat SYS_SGR1,   dbvrgb, 0x00340D  ; Medium Sea Green
   ;enumdat SYS_GRY,    dbvrgb, 0x657F80  ; Grey
   enumdat SYS_IIX4,   dbvrgb, 0x0C0C0C  ; Test of Intensity Index 4
@@ -4841,6 +4873,24 @@ PM_Pat_SpuriousError:
         pattern PATDF_4C, 2, 100, PATSF_BAPM_PMF, 2
         dw  BAPM_Pal_System, PM_Map_SpuriousError, PM_Frs_Err_Flash1LED
 
+
+;------------------------------------------------------------------------------
+
+Page0CodeEnd:
+Page0WordsUsed = Page0CodeEnd - 0x0000
+Page0WordsFree = 0x0800 - Page0CodeEnd
+
+;==============================================================================
+; Page 1 (0x0800..0x0FFF)
+;==============================================================================
+
+        ORG     0x0800
+
+;------------------------------------------------------------------------------
+; System cues and menus
+;------------------------------------------------------------------------------
+
+
 PM_Map_Err_InvalidFormat:
         bablock
         dbv2b    0, SYS_RED
@@ -4868,29 +4918,15 @@ PM_Pat_Err_PatternTooLarge:
 
 ;------------------------------------------------------------------------------
 
-Page0CodeEnd:
-Page0WordsUsed = Page0CodeEnd - 0x0000
-Page0WordsFree = 0x0800 - Page0CodeEnd
-
-;==============================================================================
-; Page 1 (0x0800..0x0FFF)
-;==============================================================================
-
-        ORG     0x0800
-
-;------------------------------------------------------------------------------
-; System cues and menus
-;------------------------------------------------------------------------------
-
 
 ; The long press cue animations are animated by AnimateLongPress, which
 ; modifies the animation depending on the values of the frame periods.
 
 PM_Pat_LPMenu_PowerOn:
-        pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 21
+        pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 14
         dw  BAPM_Pal_System, 0, 0
         bablock
-        ; Frames with even period lengths are flickery.
+        ; Frames with odd period lengths are flickery.
         ; On
         pf256c   36, SYS_DGRY, SYS_DGRY, SYS_DGRY
         pf256c   15, SYS_DGRY, SYS_DGRY, SYS_DGRY
@@ -4906,27 +4942,18 @@ PM_Pat_LPMenu_PowerOn:
         ; Choose Restrictions
         pf256c  120, SYS_RED,  SYS_RED,  SYS_RED
         pf256c   25, SYS_RED,  SYS_RED,  SYS_RED
-        ; Orientation and channel test (On)
-        pf256c   12, SYS_RED,     0,        0
-        pf256c   12,    0,     SYS_GRN,     0
-        pf256c   12,    0,        0,     SYS_BLU
-        ; Supply voltage stability stress test (On)
-        pf256c   25, SYS_DGRY, SYS_DGRY, SYS_DGRY
-        pf256c   25, SYS_XWHT, SYS_DGRY, SYS_DGRY
-        pf256c   25, SYS_XWHT, SYS_XWHT, SYS_DGRY
-        pf256c   25, SYS_XWHT, SYS_XWHT, SYS_XWHT
-        ; Supply current stress test (On)
-        pf256c   24, SYS_DGRY, SYS_DGRY, SYS_DGRY
-        pf256c   24, SYS_XWHT, SYS_DGRY, SYS_DGRY
-        pf256c   24, SYS_XWHT, SYS_XWHT, SYS_DGRY
-        pf256c   24, SYS_XWHT, SYS_XWHT, SYS_XWHT
+        ; Off
+        pf256c    2, SYS_XRED, SYS_XRED, SYS_XRED
+        pf256c    2, SYS_RED,  SYS_XRED, SYS_RED
+        pf256c    2,    0,     SYS_RED,     0
+        pf256c    2,    0,        0,        0
         endbab
 
 PM_Pat_LPMenu_Mode:
         pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 8
         dw  BAPM_Pal_System, 0, 0
         bablock
-        ; Frames with even period lengths are flickery.
+        ; Frames with odd period lengths are flickery.
         ; Next Mode
         pf256c   16,    0,        0,        0
         pf256c    9, SYS_DGRY, SYS_DGRY, SYS_DGRY
@@ -4944,7 +4971,7 @@ PM_Pat_LPMenu_SaveFav:
         pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 11
         dw  BAPM_Pal_System, 0, 0
         bablock
-        ; Frames with even period lengths are flickery.
+        ; Frames with odd period lengths are flickery.
         ; Next Pattern
         pf256c   24,    0,        0,        0
         pf256c   13, SYS_DGRY, SYS_DGRY, SYS_DGRY
@@ -4962,11 +4989,33 @@ PM_Pat_LPMenu_SaveFav:
         pf256c    1,    0,     SYS_DGRY,    0
         endbab
 
+PM_Pat_LPMenu_FavsFull:
+        pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 12
+        dw  BAPM_Pal_System, 0, 0
+        bablock
+        ; Frames with odd period lengths are flickery.
+        ; Next Pattern
+        pf256c   24,    0,        0,        0
+        pf256c   13, SYS_DGRY, SYS_DGRY, SYS_DGRY
+        ; Begin Slideshow
+        pf256c   16, SYS_YEL,     0,        0
+        pf256c    1, SYS_YEL,     0,        0
+        pf256c   16, SYS_YEL,  SYS_YEL,     0
+        pf256c    1, SYS_YEL,  SYS_YEL,     0
+        pf256c   40, SYS_YEL,  SYS_YEL,  SYS_YEL
+        pf256c   13, SYS_YEL,  SYS_YEL,  SYS_YEL
+        ; Favourites list is fall
+        pf256c    4, SYS_SGR,  SYS_SGR,  SYS_SGR
+        pf256c    2, SYS_YEL,  SYS_YEL,  SYS_YEL
+        pf256c    2,    0,     SYS_BLZ,     0
+        pf256c    1,    0,     SYS_MAG,     0
+        endbab
+
 PM_Pat_LPMenu_MoveOrDelFav:
         pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 13
         dw  BAPM_Pal_System, 0, 0
         bablock
-        ; Frames with even period lengths are flickery.
+        ; Frames with odd period lengths are flickery.
         ; Next Favourite
         pf256c   24,    0,        0,        0
         pf256c   13, SYS_DGRY, SYS_DGRY, SYS_DGRY
@@ -4991,7 +5040,7 @@ PM_Pat_LPMenu_SlideshowOnly:
         pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 9
         dw  BAPM_Pal_System, 0, 0
         bablock
-        ; Frames with even period lengths are flickery.
+        ; Frames with odd period lengths are flickery.
         ; Next Pattern
         pf256c   24,    0,        0,        0
         pf256c   13, SYS_DGRY, SYS_DGRY, SYS_DGRY
@@ -5010,7 +5059,7 @@ PM_Pat_LPMenu_StopSlideshow:
         pattern PATDF_256C, SYS_PALETTE_LENGTH, 10, PATSF_BAPM_PF, 3
         dw  BAPM_Pal_System, 0, 0
         bablock
-        ; Frames with even period lengths are flickery.
+        ; Frames with odd period lengths are flickery.
         ; Previous Pattern
         pf256c   16,    0,        0,        0
         pf256c   13, SYS_MAG,  SYS_MAG,  SYS_MAG
@@ -5049,15 +5098,16 @@ PM_Pat_Menu_LockLUP:
 
 PM_Map_Menu_Restrictions:
         bablock
-        dbv4b    0, SYS_RED, SYS_YEL, SYS_GRN1
+        dbv5b    0, SYS_RED, SYS_YEL, SYS_SKY, SYS_GRN1
         endbab
 PM_Pat_Menu_Restrictions:
-        pattern PATDF_4C, 4, 1, PATSF_BAPM_PMF, 3
+        pattern PATDF_16C, 5, 1, PATSF_BAPM_PMF, 4
         dw  BAPM_Pal_System, PM_Map_Menu_Restrictions, 0
         bablock
-        pf4c     1,   3,   3,   3
-        pf4c     1,   2,   2,   0
-        pf4c     1,   1,   0,   0
+        pf16c    1,   4,   4,   4
+        pf16c    1,   3,   3,   3
+        pf16c    1,   2,   2,   0
+        pf16c    1,   1,   0,   0
         endbab
 
 ; UI feedback cues play for a short moment before the user-selected
@@ -5071,6 +5121,7 @@ PM_Pat_Cue_Wrap:
         pattern PATDF_4C, 2, 12, PATSF_BAPM_PMF, 5
         dw  BAPM_Pal_System, PM_Map_Cue_Wrap, 0
         bablock
+        pf4c     2,   0,   0,   0
         pf4c     1,   2,   2,   2
         pf4c     1,   1,   2,   1
         pf4c     1,   0,   1,   0
@@ -5140,6 +5191,7 @@ PM_SysPatTable:
   enumdat SYSPAT_LPMENU_POWER_ON,         dw, PM_Pat_LPMenu_PowerOn
   enumdat SYSPAT_LPMENU_MODE,             dw, PM_Pat_LPMenu_Mode
   enumdat SYSPAT_LPMENU_SAVE_FAV,         dw, PM_Pat_LPMenu_SaveFav
+  enumdat SYSPAT_LPMENU_FAVS_FULL,        dw, PM_Pat_LPMenu_FavsFull
   enumdat SYSPAT_LPMENU_MOVE_OR_DEL_FAV,  dw, PM_Pat_LPMenu_MoveOrDelFav
   enumdat SYSPAT_LPMENU_SLIDESHOW_ONLY,   dw, PM_Pat_LPMenu_SlideshowOnly
   enumdat SYSPAT_LPMENU_STOP_SLIDESHOW,   dw, PM_Pat_LPMenu_StopSlideshow
@@ -5215,7 +5267,10 @@ BAPM_Pal_Basic:
   enumdat CER2,    dbvrgb, 0x110004  ; 48: Dark Cerise
   enumdat PNK2,    dbvrgb, 0x100304  ; 49: Dark Pink
   ; Special colours
-  ;enumdat GRN3,    dbvrgb, 0x100304  ; 50: : Darkest Green
+  ;enumdat RED3,    dbvrgb, 0x080000  ; 50: ; Darkest Red
+  ;enumdat ORA3,    dbvrgb, 0x090200  ; 51: ; Darkest Orange
+  ;enumdat GRN3,    dbvrgb, 0x000800  ; 52: : Darkest Green
+  ;enumdat BLU3,    dbvrgb, 0x000008  ; 53: : Darkest Blue
   endbab
 BASIC_PALETTE_LENGTH equ ENUMIX
 
@@ -5225,325 +5280,86 @@ BASIC_PALETTE_LENGTH equ ENUMIX
 ;------------------------------------------------------------------------------
 
 
-; Dual chromatic aberrations
+enumramps macro enumname, bg, a1, a2, a3, b1, b2, b3
+enumname equ ENUMIX
+        dbv7b   bg, a1, a2, a3, b1, b2, b3
+ENUMIX = ENUMIX + 1
+  endm
+
+
+BAPM_RampPairs:
 BAPM_Ramps_Default:
-BAPM_Ramps_Fire_Ice:
-        bablock
-        dbv7b    0, ORA, BLZ1, RED2, CYN, SKY1, BLU2
-        endbab
-BAPM_Ramps_Orange_Violet:
-        bablock
-        dbv7b    0, ORA, ORA1, ORA2, VIO, VIO1, VIO2
-        endbab
-BAPM_Ramps_White_Ice:
-        bablock
-        dbv7b    0, WHT, WHT1, WHT2, CYN, SKY1, BLU2
-        endbab
-BAPM_Ramps_Ice_Strawberry:
-        bablock
-        dbv7b    0, CYN, SKY1, BLU2, PNK, CER1, RED2
-        endbab
-BAPM_Ramps_Gold_Silver:
-        bablock
-        dbv7b    0, YEL, ORA1, BLZ2, WHT, WHT1, WHT2
-        endbab
-; Non-black backgrounds
-BAPM_Ramps_PurpleHaze:
-        bablock
-        dbv7b    MAG2, ORA, BLZ, RED1, BLU, PUR1, VIO1
-        endbab
-BAPM_Ramps_SpectralViolence:
-        bablock
-        dbv7b    BLZ2, SKY, YEL, CER1, BLZ, GRN1, BLU1
-        endbab
-BAPM_Ramps_RedMist:
-        bablock
-        dbv7b    RED2, BLZ, RED, RED1, BLZ, RED, RED2
-        endbab
-; Dual plain colours
-BAPM_Ramps_Blue_SkyBlue:
-        bablock
-        dbv7b    0, BLU, BLU1, BLU2, SKY, SKY1, SKY2
-        endbab
-BAPM_Ramps_Red_SkyBlue:
-        bablock
-        dbv7b    0, RED, RED1, RED2, SKY, SKY1, SKY2
-        endbab
-BAPM_Ramps_Cerise_Green:
-        bablock
-        dbv7b    0, CER, CER1, CER2, GRN, GRN1, GRN2
-        endbab
-BAPM_Ramps_BlazeOrange_SkyBlue:
-        bablock
-        dbv7b    0, BLZ, BLZ1, BLZ2, SKY, SKY1, SKY2
-        endbab
-BAPM_Ramps_Yellow_SkyBlue:
-        bablock
-        dbv7b    0, YEL, YEL1, YEL2, SKY1, SKY1, SKY2
-        endbab
-BAPM_Ramps_Red_Cerise:
-        bablock
-        dbv7b    0, RED, RED1, RED2, CER, CER1, CER2
-        endbab
-BAPM_Ramps_SkyBlue_Green:
-        bablock
-        dbv7b    0, SKY, SKY1, SKY2, GRN, GRN1, GRN2
-        endbab
-BAPM_Ramps_Red_White:
-        bablock
-        dbv7b    0, RED, RED1, RED2, WHT, WHT1, WHT2
-        endbab
-BAPM_Ramps_Orange_White:
-        bablock
-        dbv7b    0, ORA, ORA1, ORA2, WHT, WHT1, WHT2
-        endbab
-BAPM_Ramps_Green_White:
-        bablock
-        dbv7b    0, GRN, GRN1, GRN2, WHT, WHT1, WHT2
-        endbab
-BAPM_Ramps_SkyBlue_White:
-        bablock
-        dbv7b    0, SKY, SKY1, SKY2, WHT, WHT1, WHT2
-        endbab
-BAPM_Ramps_Violet_White:
-        bablock
-        dbv7b    0, VIO, VIO1, VIO2, WHT, WHT1, WHT2
-        endbab
-; Single chromatic aberrations
-BAPM_Ramps_Blurple:
-        bablock
-        dbv7b    0, BLU, VIO1, MAG2, BLU, VIO1, MAG2
-        endbab
-BAPM_Ramps_Strawberry:
-        bablock
-        dbv7b    0, PNK, CER1, RED2, PNK, CER1, RED2
-        endbab
-BAPM_Ramps_Gold:
-        bablock
-        dbv7b    0, YEL, ORA1, BLZ2, YEL, ORA1, BLZ2
-        endbab
-BAPM_Ramps_Mint:
-        bablock
-        dbv7b    0, WHT, SGR, GRN2, WHT, SGR, GRN2
-        endbab
-BAPM_Ramps_Arc:
-        bablock
-        dbv7b    0, XEN, PUR, VIO2, XEN, PUR, VIO2
-        endbab
-BAPM_Ramps_Ice:
-        bablock
-        dbv7b    0, CYN, SKY1, BLU2, CYN, SKY1, BLU2
-        endbab
-BAPM_Ramps_Fire:
-        bablock
-        dbv7b    0, ORA, BLZ1, RED2, ORA, BLZ1, RED2
-        endbab
-BAPM_Ramps_Bunsen:
-        bablock
-        dbv7b    0, PUR, PUR1, BLU2, PUR, PUR1, BLU2
-        endbab
-; Single plain colours
-BAPM_Ramps_Red:
-        bablock
-        dbv7b    0, RED, RED1, RED2, RED, RED1, RED2
-        endbab
-BAPM_Ramps_BlazeOrange:
-        bablock
-        dbv7b    0, BLZ, BLZ1, BLZ2, BLZ, BLZ1, BLZ2
-        endbab
-BAPM_Ramps_Orange:
-        bablock
-        dbv7b    0, ORA, ORA1, ORA2, ORA, ORA1, ORA2
-        endbab
-BAPM_Ramps_Yellow:
-        bablock
-        dbv7b    0, YEL, YEL1, YEL2, YEL, YEL1, YEL2
-        endbab
-BAPM_Ramps_Snot:
-        bablock
-        dbv7b    0, SNT, SNT1, SNT2, SNT, SNT1, SNT2
-        endbab
-BAPM_Ramps_Green:
-        bablock
-        dbv7b    0, GRN, GRN1, GRN2, GRN, GRN1, GRN2
-        endbab
-BAPM_Ramps_SeaGreen:
-        bablock
-        dbv7b    0, SGR, SGR1, SGR2, SGR, SGR1, SGR2
-        endbab
-BAPM_Ramps_Cyan:
-        bablock
-        dbv7b    0, CYN, CYN1, CYN2, CYN, CYN1, CYN2
-        endbab
-BAPM_Ramps_SkyBlue:
-        bablock
-        dbv7b    0, SKY, SKY1, SKY2, SKY, SKY1, SKY2
-        endbab
-BAPM_Ramps_Blue:
-        bablock
-        dbv7b    0, BLU, BLU1, BLU2, BLU, BLU1, BLU2
-        endbab
-BAPM_Ramps_Purple:
-        bablock
-        dbv7b    0, PUR, PUR1, PUR2, PUR, PUR1, PUR2
-        endbab
-BAPM_Ramps_Violet:
-        bablock
-        dbv7b    0, VIO, VIO1, VIO2, VIO, VIO1, VIO2
-        endbab
-BAPM_Ramps_Magenta:
-        bablock
-        dbv7b    0, MAG, MAG1, MAG2, MAG, MAG1, MAG2
-        endbab
-BAPM_Ramps_Cerise:
-        bablock
-        dbv7b    0, CER, CER1, CER2, CER, CER1, CER2
-        endbab
-BAPM_Ramps_Pink:
-        bablock
-        dbv7b    0, PNK, PNK1, PNK2, PNK, PNK1, PNK2
-        endbab
-BAPM_Ramps_White:
-        bablock
-        dbv7b    0, WHT, WHT1, WHT2, WHT, WHT1, WHT2
-        endbab
-; Non-selectable ramps (because they are not really ramps)
-BAPM_Ramps_Tri_RGB:
-        bablock
-        dbv4b   BLK, RED, GRN, BLU
-        endbab
-BAPM_Ramps_Tri_RWB:
-        bablock
-        dbv4b   BLK, RED, WHT, BLU
-        endbab
-BAPM_Ramps_Tri_CMY:
-        bablock
-        dbv4b   BLK, CYN, MAG, YEL
-        endbab
-BAPM_Ramps_Tri_BWR:
-        bablock
-        dbv4b   BLK, BLU, WHT, RED
-        endbab
-BAPM_Ramps_Tri_RevRYG:
-        bablock
-        dbv4b   BLK, GRN1, YEL, RED
-        endbab
-BAPM_Ramps_Tri_RevGWO:
-        bablock
-        dbv4b   BLK, ORA1, WHT, GRN1
-        endbab
-BAPM_Ramps_Tri_RevCWS:
-        bablock
-        dbv4b   BLK, SKY, WHT, CER
-        endbab
-BAPM_Ramps_Tri_RWR:
-        bablock
-        dbv4b   BLK, RED, WHT, RED
-        endbab
-BAPM_Ramps_Tri_GWG:
-        bablock
-        dbv4b   BLK, GRN1, WHT, GRN1
-        endbab
-BAPM_Ramps_Tri_CWC:
-        bablock
-        dbv4b   BLK, CYN, WHT, CYN
-        endbab
-BAPM_Ramps_Tri_BWB:
-        bablock
-        dbv4b   BLK, BLU1, WHT, BLU1
-        endbab
-BAPM_Ramps_Tri_RevGWR:
-        bablock
-        dbv4b   BLK, RED, WHT, GRN1
-        endbab
-BAPM_Ramps_Tri_RevRPB:
-        bablock
-        dbv4b   BLK, BLU, PNK, RED
-        endbab
-BAPM_Ramps_Tri_RevCYB:
-        bablock
-        dbv4b   BLK, BLU, YEL, CER
-        endbab
-BAPM_Ramps_Tri_CSB:
-        bablock
-        dbv4b   BLK, CYN, SKY, BLU
-        endbab
-
-
-;------------------------------------------------------------------------------
-; Ramp pairs address table, enumerated
-;------------------------------------------------------------------------------
-
-
-PM_RampAddrTable:
   resetenum
+  bablock
   ; Dual chromatic aberrations
-  enumdat RAMPS_FIRE_ICE,         dw, BAPM_Ramps_Fire_Ice
-  enumdat RAMPS_ORANGE_VIOLET,    dw, BAPM_Ramps_Orange_Violet
-  enumdat RAMPS_WHITE_ICE,        dw, BAPM_Ramps_White_Ice
-  enumdat RAMPS_ICE_STRAWBERRY,   dw, BAPM_Ramps_Ice_Strawberry
+  enumramps RAMPS_FIRE_ICE,       0,  ORA,  BLZ1, RED2,   CYN,  SKY1, BLU2
+  enumramps RAMPS_ORANGE_VIOLET,  0,  ORA,  ORA1, ORA2,   VIO,  VIO1, VIO2
+  enumramps RAMPS_WHITE_ICE,      0,  WHT,  WHT1, WHT2,   CYN,  SKY1, BLU2
+  enumramps RAMPS_ICE_STRAWBERRY, 0,  CYN,  SKY1, BLU2,   PNK,  CER1, RED2
+  enumramps RAMPS_GOLD_SILVER,    0,  YEL,  ORA1, BLZ2,   WHT,  WHT1, WHT2
   ; Non-black backgrounds
-  enumdat RAMPS_PURPLE_HAZE,      dw, BAPM_Ramps_PurpleHaze
-  enumdat RAMPS_SPECTRAL_VIOLENCE,dw, BAPM_Ramps_SpectralViolence
-  enumdat RAMPS_RED_MIST,         dw, BAPM_Ramps_RedMist
+  enumramps RAMPS_PURPLE_HAZE,  MAG2, ORA,  BLZ,  RED1,   BLU,  PUR1, VIO1
+  enumramps RAMPS_TIE_DYED,     BLZ2, SKY,  YEL,  CER1,   BLZ,  GRN1, BLU1
+  enumramps RAMPS_RED_MIST,     RED2, BLZ,  RED,  RED1,   BLZ,  RED,  RED1
   ; Dual plain colours
-  enumdat RAMPS_BLUE_SKYBLUE,     dw, BAPM_Ramps_Blue_SkyBlue
-  enumdat RAMPS_RED_SKYBLUE,      dw, BAPM_Ramps_Red_SkyBlue
-  enumdat RAMPS_CERISE_GREEN,     dw, BAPM_Ramps_Cerise_Green
-  enumdat RAMPS_BLAZOR_SKYBLUE,   dw, BAPM_Ramps_BlazeOrange_SkyBlue
-  enumdat RAMPS_YELLOW_SKYBLUE,   dw, BAPM_Ramps_Yellow_SkyBlue
-  enumdat RAMPS_RED_CERISE,       dw, BAPM_Ramps_Red_Cerise
-  enumdat RAMPS_SKYBLUE_GREEN,    dw, BAPM_Ramps_SkyBlue_Green
-  enumdat RAMPS_RED_WHITE,        dw, BAPM_Ramps_Red_White
-  enumdat RAMPS_ORANGE_WHITE,     dw, BAPM_Ramps_Orange_White
-  enumdat RAMPS_GREEN_WHITE,      dw, BAPM_Ramps_Green_White
-  enumdat RAMPS_SKYBLUE_WHITE,    dw, BAPM_Ramps_SkyBlue_White
-  enumdat RAMPS_VIOLET_WHITE,     dw, BAPM_Ramps_Violet_White
+  enumramps RAMPS_BLUE_SKYBLUE,   0,  BLU,  BLU1, BLU2,   SKY,  SKY1, SKY2
+  enumramps RAMPS_RED_SKYBLUE,    0,  RED,  RED1, RED2,   SKY,  SKY1, SKY2
+  enumramps RAMPS_CERISE_GREEN,   0,  CER,  CER1, CER2,   GRN,  GRN1, GRN2
+  enumramps RAMPS_BLAZOR_SKYBLUE, 0,  BLZ,  BLZ1, BLZ2,   SKY,  SKY1, SKY2
+  enumramps RAMPS_YELLOW_SKYBLUE, 0,  YEL,  YEL1, YEL2,   SKY1, SKY1, SKY2
+  enumramps RAMPS_RED_CERISE,     0,  RED,  RED1, RED2,   CER,  CER1, CER2
+  enumramps RAMPS_SKYBLUE_GREEN,  0,  SKY,  SKY1, SKY2,   GRN,  GRN1, GRN2
+  enumramps RAMPS_RED_WHITE,      0,  RED,  RED1, RED2,   WHT,  WHT1, WHT2
+  enumramps RAMPS_ORANGE_WHITE,   0,  ORA,  ORA1, ORA2,   WHT,  WHT1, WHT2
+  enumramps RAMPS_GREEN_WHITE,    0,  GRN,  GRN1, GRN2,   WHT,  WHT1, WHT2
+  enumramps RAMPS_SKYBLUE_WHITE,  0,  SKY,  SKY1, SKY2,   WHT,  WHT1, WHT2
+  enumramps RAMPS_VIOLET_WHITE,   0,  VIO,  VIO1, VIO2,   WHT,  WHT1, WHT2
   ; Single chromatic aberrations
-  enumdat RAMPS_BLURPLE,          dw, BAPM_Ramps_Blurple
-  enumdat RAMPS_STRAWBERRY,       dw, BAPM_Ramps_Strawberry
-  enumdat RAMPS_GOLD,             dw, BAPM_Ramps_Gold
-  enumdat RAMPS_MINT,             dw, BAPM_Ramps_Mint
-  enumdat RAMPS_ARC,              dw, BAPM_Ramps_Arc
-  enumdat RAMPS_ICE,              dw, BAPM_Ramps_Ice
-  enumdat RAMPS_FIRE,             dw, BAPM_Ramps_Fire
-  enumdat RAMPS_GOLD_SILVER,      dw, BAPM_Ramps_Gold_Silver
-  enumdat RAMPS_BUNSEN,           dw, BAPM_Ramps_Bunsen
+  enumramps RAMPS_BLURPLE,        0,  BLU,  VIO1, MAG2,   BLU,  VIO1, MAG2
+  enumramps RAMPS_STRAWBERRY,     0,  PNK,  CER1, RED2,   PNK,  CER1, RED2
+  enumramps RAMPS_GOLD,           0,  YEL,  ORA1, BLZ2,   YEL,  ORA1, BLZ2
+  enumramps RAMPS_MINT,           0,  WHT,  SGR,  GRN2,   WHT,  SGR,  GRN2
+  enumramps RAMPS_ARC,            0,  XEN,  PUR,  VIO2,   XEN,  PUR,  VIO2
+  enumramps RAMPS_ICE,            0,  CYN,  SKY1, BLU2,   CYN,  SKY1, BLU2
+  enumramps RAMPS_FIRE,           0,  ORA,  BLZ1, RED2,   ORA,  BLZ1, RED2
+  enumramps RAMPS_BUNSEN,         0,  PUR,  PUR1, BLU2,   PUR,  PUR1, BLU2
   ; Single plain colours
-  enumdat RAMPS_RED,              dw, BAPM_Ramps_Red
-  enumdat RAMPS_BLAZOR,           dw, BAPM_Ramps_BlazeOrange
-  enumdat RAMPS_ORANGE,           dw, BAPM_Ramps_Orange
-  enumdat RAMPS_YELLOW,           dw, BAPM_Ramps_Yellow
-  enumdat RAMPS_SNOT,             dw, BAPM_Ramps_Snot
-  enumdat RAMPS_GREEN,            dw, BAPM_Ramps_Green
-  enumdat RAMPS_SEAGREEN,         dw, BAPM_Ramps_SeaGreen
-  enumdat RAMPS_CYAN,             dw, BAPM_Ramps_Cyan
-  enumdat RAMPS_SKYBLUE,          dw, BAPM_Ramps_SkyBlue
-  enumdat RAMPS_BLUE,             dw, BAPM_Ramps_Blue
-  enumdat RAMPS_PURPLE,           dw, BAPM_Ramps_Purple
-  enumdat RAMPS_VIOLET,           dw, BAPM_Ramps_Violet
-  enumdat RAMPS_MAGENTA,          dw, BAPM_Ramps_Magenta
-  enumdat RAMPS_CERISE,           dw, BAPM_Ramps_Cerise
-  enumdat RAMPS_PINK,             dw, BAPM_Ramps_Pink
-  enumdat RAMPS_WHITE,            dw, BAPM_Ramps_White
+BAPM_Ramps_Red:  ; For AWL
+  enumramps RAMPS_RED,            0,  RED,  RED1, RED2,   RED,  RED1, RED2
+  enumramps RAMPS_BLAZOR,         0,  BLZ,  BLZ1, BLZ2,   BLZ,  BLZ1, BLZ2
+  enumramps RAMPS_ORANGE,         0,  ORA,  ORA1, ORA2,   ORA,  ORA1, ORA2
+  enumramps RAMPS_YELLOW,         0,  YEL,  YEL1, YEL2,   YEL,  YEL1, YEL2
+  enumramps RAMPS_SNOT,           0,  SNT,  SNT1, SNT2,   SNT,  SNT1, SNT2
+  enumramps RAMPS_GREEN,          0,  GRN,  GRN1, GRN2,   GRN,  GRN1, GRN2
+  enumramps RAMPS_SEAGREEN,       0,  SGR,  SGR1, SGR2,   SGR,  SGR1, SGR2
+  enumramps RAMPS_CYAN,           0,  CYN,  CYN1, CYN2,   CYN,  CYN1, CYN2
+  enumramps RAMPS_SKYBLUE,        0,  SKY,  SKY1, SKY2,   SKY,  SKY1, SKY2
+  enumramps RAMPS_BLUE,           0,  BLU,  BLU1, BLU2,   BLU,  BLU1, BLU2
+  enumramps RAMPS_PURPLE,         0,  PUR,  PUR1, PUR2,   PUR,  PUR1, PUR2
+  enumramps RAMPS_VIOLET,         0,  VIO,  VIO1, VIO2,   VIO,  VIO1, VIO2
+  enumramps RAMPS_MAGENTA,        0,  MAG,  MAG1, MAG2,   MAG,  MAG1, MAG2
+  enumramps RAMPS_CERISE,         0,  CER,  CER1, CER2,   CER,  CER1, CER2
+  enumramps RAMPS_PINK,           0,  PNK,  PNK1, PNK2,   PNK,  PNK1, PNK2
+  enumramps RAMPS_WHITE,          0,  WHT,  WHT1, WHT2,   WHT,  WHT1, WHT2
 NUM_USER_RAMP_PAIRS equ ENUMIX
-  ; Tricolours
-  enumdat RAMPS_TRI_REV_CYB,      dw, BAPM_Ramps_Tri_RevCYB
-  enumdat RAMPS_TRI_REV_CWS,      dw, BAPM_Ramps_Tri_RevCWS
-  enumdat RAMPS_TRI_REV_RPB,      dw, BAPM_Ramps_Tri_RevRPB
-  enumdat RAMPS_TRI_RGB,          dw, BAPM_Ramps_Tri_RGB
-  enumdat RAMPS_TRI_RWB,          dw, BAPM_Ramps_Tri_RWB
-  enumdat RAMPS_TRI_CMY,          dw, BAPM_Ramps_Tri_CMY
-  enumdat RAMPS_TRI_BWR,          dw, BAPM_Ramps_Tri_BWR
-  enumdat RAMPS_TRI_REV_RYG,      dw, BAPM_Ramps_Tri_RevRYG
-  enumdat RAMPS_TRI_REV_GWR,      dw, BAPM_Ramps_Tri_RevGWR
-  enumdat RAMPS_TRI_REV_GWO,      dw, BAPM_Ramps_Tri_RevGWO
-  enumdat RAMPS_TRI_RWR,          dw, BAPM_Ramps_Tri_RWR
-  enumdat RAMPS_TRI_GWG,          dw, BAPM_Ramps_Tri_GWG
-  enumdat RAMPS_TRI_CWC,          dw, BAPM_Ramps_Tri_CWC
-  enumdat RAMPS_TRI_BWB,          dw, BAPM_Ramps_Tri_BWB
-  enumdat RAMPS_TRI_CSB,          dw, BAPM_Ramps_Tri_CSB
+  ; Tricolours (Non-selectable because they are not true ramps.)
+  enumramps RAMPS_TRI_REV_CYB,    0,  BLU,  YEL,  CER,    0, 0, 0
+  enumramps RAMPS_TRI_REV_CWS,    0,  SKY,  WHT,  CER,    0, 0, 0
+  enumramps RAMPS_TRI_REV_RPB,    0,  BLU,  PNK,  RED,    0, 0, 0
+  enumramps RAMPS_TRI_RGB,        0,  RED,  GRN,  BLU,    0, 0, 0
+  enumramps RAMPS_TRI_RWB,        0,  RED,  WHT,  BLU,    0, 0, 0
+  enumramps RAMPS_TRI_CMY,        0,  CYN,  MAG,  YEL,    0, 0, 0
+  enumramps RAMPS_TRI_BWR,        0,  BLU,  WHT,  RED,    0, 0, 0
+  enumramps RAMPS_TRI_REV_RYG,    0,  GRN1, YEL,  RED,    0, 0, 0
+  enumramps RAMPS_TRI_REV_GWR,    0,  RED,  WHT,  GRN1,   0, 0, 0
+  enumramps RAMPS_TRI_REV_GWO,    0,  ORA1, WHT,  GRN1,   0, 0, 0
+  enumramps RAMPS_TRI_RWR,        0,  RED,  WHT,  RED,    0, 0, 0
+  enumramps RAMPS_TRI_GWG,        0,  GRN1, WHT,  GRN1,   0, 0, 0
+  enumramps RAMPS_TRI_CWC,        0,  CYN,  WHT,  CYN,    0, 0, 0
+  enumramps RAMPS_TRI_BWB,        0,  BLU1, WHT,  BLU1,   0, 0, 0
+  enumramps RAMPS_TRI_CSB,        0,  CYN,  SKY,  BLU,    0, 0, 0
 NUM_RAMP_PAIRS equ ENUMIX
+  endbab
 
 
 ;------------------------------------------------------------------------------
@@ -5551,12 +5367,12 @@ NUM_RAMP_PAIRS equ ENUMIX
 ;------------------------------------------------------------------------------
 
 
-BAPM_Map_SixSolidColoursPlusBW:
+BAPM_Map_SixSolidColoursPlusKW:
         bablock
         dbv8b   BLK, GRN, YEL, SKY, RED, CER, SGR, WHT
         endbab
 
-BAPM_Map_SixSolidColoursPlusBX:
+BAPM_Map_SixSolidColoursPlusKX:
         bablock
         dbv8b   BLK, GRN, YEL, SKY, RED, CER, SGR, XEN
         endbab
@@ -5587,13 +5403,13 @@ BAPM_Frs_TriRainbow:
         pf24b   254, 1, 0x00FF01, 0xFF0100, 0x0100FF
         endbab
 
-BAPM_Frs_CMYTriRainbow:
-        bablock
-        pf24b     1, 0, 0x00AAAA, 0xAA00AA, 0xAAAA00
-        pf24b   160, 1, 0x01FF00, 0x0001FF, 0xFF0001
-        pf24b   160, 1, 0x0001FF, 0xFF0001, 0x01FF00
-        pf24b   159, 1, 0xFF0001, 0x01FF00, 0x0001FF
-        endbab
+;BAPM_Frs_CMYTriRainbow:
+;        bablock
+;        pf24b     1, 0, 0x00AAAA, 0xAA00AA, 0xAAAA00
+;        pf24b   160, 1, 0x01FF00, 0x0001FF, 0xFF0001
+;        pf24b   160, 1, 0x0001FF, 0xFF0001, 0x01FF00
+;        pf24b   159, 1, 0xFF0001, 0x01FF00, 0x0001FF
+;        endbab
 
 BAPM_Frs_LagTriRainbow:
         bablock
@@ -5622,16 +5438,16 @@ PM_Pat_TriRainbow:
         pattern PATDF_24B, 0, 1, PATSF_BAPM_F, 4
         dw  0, 0, BAPM_Frs_TriRainbow
 
-PM_Pat_CMYTriRainbow:
-        pattern PATDF_24B, 0, 2, PATSF_BAPM_F, 4
-        dw  0, 0, BAPM_Frs_CMYTriRainbow
+;PM_Pat_CMYTriRainbow:
+;        pattern PATDF_24B, 0, 2, PATSF_BAPM_F, 4
+;        dw  0, 0, BAPM_Frs_CMYTriRainbow
 
 PM_Pat_LagTriRainbow:
         pattern PATDF_24B, 0, 4, PATSF_BAPM_F, 10
         dw  0, 0, BAPM_Frs_LagTriRainbow
 
 PM_Pat_UnisonTriRainbow:
-        pattern PATDF_24B, 0, 15, PATSF_BAPM_F, 5
+        pattern PATDF_24B, 0, 16, PATSF_BAPM_F, 5
         dw  0, 0, BAPM_Frs_UnisonTriRainbow
 
 ;BAPM_Frs_HexRainbow:
@@ -5650,7 +5466,7 @@ PM_Pat_UnisonTriRainbow:
 ;        dw  0, 0, BAPM_Frs_HexRainbow
 
 PM_Pat_Solid:
-        pattern PATDF_ER4C, 4, 100, PATSF_BAPM_PMF, 1
+        pattern PATDF_ER4C, 4, 1, PATSF_BAPM_PMF, 1
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, 0
         bablock
         pf4c      1,   1,  1,  1
@@ -5685,7 +5501,7 @@ PM_Pat_SolidSteps_Fast:
         pattern PATDF_16C, 16, 1, PATSF_BAPM_PMF, 16
         dw BAPM_Pal_Basic, PM_Map_SolidSteps, PM_Frs_SolidSteps
 PM_Pat_SolidSteps_Slow:
-        pattern PATDF_16C, 16, 222, PATSF_BAPM_PMF, 16
+        pattern PATDF_16C, 16, 224, PATSF_BAPM_PMF, 16
         dw BAPM_Pal_Basic, PM_Map_SolidSteps, PM_Frs_SolidSteps
 
 PM_Frs_Flashy:
@@ -5837,7 +5653,7 @@ BAPM_Frs_Squares:
         endbab
 PM_Pat_Squares_Fixed5:
         pattern PATDF_16C, 7, 1, PATSF_BAPM_PMF, 4 * 5
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusBW, BAPM_Frs_Squares
+        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_Squares
 PM_Pat_Squares_User2:
         pattern PATDF_ER16C, 7, 1, PATSF_BAPM_PMF, 4 * 2
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Squares
@@ -5872,12 +5688,12 @@ BAPM_Frs_QuantumSlalom:
 PM_Pat_QuantumSlalom_Fixed6:
         pattern PATDF_16C, 8, 2, PATSF_BAPM_PMF, 4 * 6
         dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusBW
+        dw BAPM_Map_SixSolidColoursPlusKW
         dw BAPM_Frs_QuantumSlalom
 PM_Pat_QuantumSlalom_User2:
         pattern PATDF_ER16C, 8, 2, PATSF_BAPM_PMF, 4 * 2
         dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusBW
+        dw BAPM_Map_SixSolidColoursPlusKW
         dw BAPM_Frs_QuantumSlalom
 
 BAPM_Frs_Terminals:
@@ -5898,12 +5714,12 @@ BAPM_Frs_Terminals:
 PM_Pat_Terminals_Fixed6:
         pattern PATDF_16C, 8, 2, PATSF_BAPM_PMF, 2 * 6
         dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusBW
+        dw BAPM_Map_SixSolidColoursPlusKW
         dw BAPM_Frs_Terminals
 PM_Pat_Terminals_User2:
         pattern PATDF_ER16C, 8, 2, PATSF_BAPM_PMF, 2 * 2
         dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusBW
+        dw BAPM_Map_SixSolidColoursPlusKW
         dw BAPM_Frs_Terminals
 
 BAPM_Frs_TrianglesNearMe:
@@ -5947,10 +5763,14 @@ BAPM_Frs_TrianglesNearMe:
         endbab
 PM_Pat_TrianglesNearMe_Fixed5:
         pattern PATDF_16C, 7, 4, PATSF_BAPM_PMF, 6 * 5
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusBW, BAPM_Frs_TrianglesNearMe
+        dw BAPM_Pal_Basic
+        dw BAPM_Map_SixSolidColoursPlusKW
+        dw BAPM_Frs_TrianglesNearMe
 PM_Pat_TrianglesNearMe_User2:
         pattern PATDF_ER16C, 7, 4, PATSF_BAPM_PMF, 6 * 2
-        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_TrianglesNearMe
+        dw BAPM_Pal_Basic
+        dw BAPM_Ramps_Default
+        dw BAPM_Frs_TrianglesNearMe
 
 BAPM_Frs_ZigZagVs:
         bablock
@@ -6166,10 +5986,10 @@ BAPM_Frs_ChequerW:
         endbab
 PM_Pat_ChequerW_T3:
         pattern PATDF_ER16C, 8, 3, PATSF_BAPM_PMF, 2
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusBW, BAPM_Frs_ChequerW
+        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_ChequerW
 PM_Pat_ChequerW_T6:
         pattern PATDF_ER16C, 8, 6, PATSF_BAPM_PMF, 2
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusBW, BAPM_Frs_ChequerW
+        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_ChequerW
 
 PM_Pat_ByYourCommand:
         pattern PATDF_24B, 0, 1, PATSF_BAPM_PMF, 6
@@ -6217,14 +6037,14 @@ BAPM_Frs_TriRad:
         pf4c      1,   3,  3,  3
         pf4c      1,   0,  0,  0
         endbab
-BAPM_Pat_TriR_Solid_T7:
-        pattern PATDF_ER4C, 4, 7, PATSF_BAPM_PMF, 3
+BAPM_Pat_TriR_Solid_T8:
+        pattern PATDF_ER4C, 4, 8, PATSF_BAPM_PMF, 3
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_TriRad
-BAPM_Pat_TriR_Spaced_T5:
-        pattern PATDF_ER4C, 4, 5, PATSF_BAPM_PMF, 4
+BAPM_Pat_TriR_Spaced_T4:
+        pattern PATDF_ER4C, 4, 4, PATSF_BAPM_PMF, 4
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_TriRad
-BAPM_Pat_TriR_Spaced_T9:
-        pattern PATDF_ER4C, 4, 9, PATSF_BAPM_PMF, 4
+BAPM_Pat_TriR_Spaced_T8:
+        pattern PATDF_ER4C, 4, 8, PATSF_BAPM_PMF, 4
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_TriRad
 
 BAPM_Frs_TriChaser:
@@ -6234,7 +6054,7 @@ BAPM_Frs_TriChaser:
         pf4c      1,   2,  3,  1
         endbab
 BAPM_Pat_TriChaser:
-        pattern PATDF_ER4C, 4, 148, PATSF_BAPM_PMF, 3
+        pattern PATDF_ER4C, 4, 160, PATSF_BAPM_PMF, 3
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_TriChaser
 
 BAPM_Frs_BlurStep:
@@ -6254,7 +6074,7 @@ BAPM_Frs_BlurStep:
         endbab
 PM_Pat_BlurStep:
         pattern PATDF_ER16C, 7, 2, PATSF_BAPM_PMF, 12
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusBW, BAPM_Frs_BlurStep
+        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_BlurStep
 
 BAPM_Frs_IntenseDecay:
         bablock
@@ -6274,7 +6094,7 @@ BAPM_Frs_IntenseDecay:
 PM_Pat_IntenseDecay:
         pattern PATDF_ER16C, 8, 2, PATSF_BAPM_PMF, 12
         dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusBX
+        dw BAPM_Map_SixSolidColoursPlusKX
         dw BAPM_Frs_IntenseDecay
 
 BAPM_Frs_Bookends:
@@ -6324,8 +6144,12 @@ BAPM_Frs_Slides:
         pf16c     1,   2,  1,  1
         endbab
 PM_Pat_Slides:
-        pattern PATDF_ER16C, 7, 15, PATSF_BAPM_PMF, 26
+        pattern PATDF_ER16C, 7, 16, PATSF_BAPM_PMF, 26
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Slides
+
+INCLUDE_MORSE equ 0
+
+  if INCLUDE_MORSE
 
 num_frames = 0
 morse_dash macro
@@ -6553,10 +6377,6 @@ morse_question macro
         morse_letter_space
   endm
 
-INCLUDE_MORSE equ 0
-
-  if INCLUDE_MORSE
-
 ; This message is n = 378 dit units long, including the terminal spacing.
 ; The PWM is good for f = 443Hz. The message takes T_m = n*(1/f) = 0.853273s
 ; to transmit. The poi stick is w = 0.028m wide. To avoid smudging, the
@@ -6635,7 +6455,6 @@ PM_PatAddrTable:
   resetenum
   enumdat PAT_UNISON_TRI_RAINBOW, dw, PM_Pat_UnisonTriRainbow
   enumdat PAT_TRI_RAINBOW,        dw, PM_Pat_TriRainbow
-  enumdat PAT_CMY_TRI_RAINBOW,    dw, PM_Pat_CMYTriRainbow
   enumdat PAT_LAG_TRI_RAINBOW,    dw, PM_Pat_LagTriRainbow
   enumdat PAT_SOLID_STEPS_FAST,   dw, PM_Pat_SolidSteps_Fast
   enumdat PAT_SOLID_STEPS_SLOW,   dw, PM_Pat_SolidSteps_Slow
@@ -6706,9 +6525,9 @@ PM_PatAddrTable:
   enumdat PAT_TRIC_FLASH_T4,      dw, BAPM_Pat_TriC_Flash_T4
   enumdat PAT_TRIC_FLASH_T8,      dw, BAPM_Pat_TriC_Flash_T8
   enumdat PAT_TRIC_DASHES_T6,     dw, BAPM_Pat_TriC_Dashes_T6
-  enumdat PAT_TRIR_SOLID_T7,      dw, BAPM_Pat_TriR_Solid_T7
-  enumdat PAT_TRIR_SPACED_T5,     dw, BAPM_Pat_TriR_Spaced_T5
-  enumdat PAT_TRIR_SPACED_T9,     dw, BAPM_Pat_TriR_Spaced_T9
+  enumdat PAT_TRIR_SOLID_T8,      dw, BAPM_Pat_TriR_Solid_T8
+  enumdat PAT_TRIR_SPACED_T4,     dw, BAPM_Pat_TriR_Spaced_T4
+  enumdat PAT_TRIR_SPACED_T8,     dw, BAPM_Pat_TriR_Spaced_T8
   enumdat PAT_TRI_CHASER,         dw, BAPM_Pat_TriChaser
 
 
@@ -6737,7 +6556,6 @@ PM_PatTable_Bank0:
         ; Rainbows and solid colours
         pat_fixed   PAT_UNISON_TRI_RAINBOW
         pat_fixed   PAT_TRI_RAINBOW
-        pat_fixed   PAT_CMY_TRI_RAINBOW
         pat_fixed   PAT_LAG_TRI_RAINBOW
         pat_fixed   PAT_SOLID_STEPS_SLOW
         pat_fixed   PAT_SOLID_STEPS_FAST
@@ -6841,51 +6659,51 @@ PM_PatTable_Bank2:
         pat_eramps  PAT_TRI_CHASER, RAMPS_TRI_CWC
         pat_eramps  PAT_TRI_CHASER, RAMPS_TRI_BWB
         pat_eramps  PAT_TRI_CHASER, RAMPS_TRI_CSB
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_REV_CYB
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_REV_CWS
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_REV_RPB
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_RGB
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_RWB
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_CMY
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_BWR
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_REV_RYG
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_REV_GWR
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_REV_GWO
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_RWR
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_GWG
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_CWC
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_BWB
-        pat_eramps  PAT_TRIR_SOLID_T7, RAMPS_TRI_CSB
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_REV_CYB
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_REV_CWS
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_REV_RPB
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_RGB
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_RWB
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_CMY
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_BWR
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_REV_RYG
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_REV_GWR
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_REV_GWO
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_RWR
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_GWG
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_CWC
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_BWB
-        pat_eramps  PAT_TRIR_SPACED_T9, RAMPS_TRI_CSB
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_REV_CYB
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_REV_CWS
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_REV_RPB
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_RGB
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_RWB
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_CMY
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_BWR
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_REV_RYG
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_REV_GWR
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_REV_GWO
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_RWR
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_GWG
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_CWC
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_BWB
-        pat_eramps  PAT_TRIR_SPACED_T5, RAMPS_TRI_CSB
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_REV_CYB
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_REV_CWS
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_REV_RPB
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_RGB
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_RWB
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_CMY
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_BWR
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_REV_RYG
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_REV_GWR
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_REV_GWO
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_RWR
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_GWG
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_CWC
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_BWB
+        pat_eramps  PAT_TRIR_SOLID_T8, RAMPS_TRI_CSB
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_REV_CYB
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_REV_CWS
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_REV_RPB
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_RGB
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_RWB
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_CMY
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_BWR
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_REV_RYG
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_REV_GWR
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_REV_GWO
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_RWR
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_GWG
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_CWC
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_BWB
+        pat_eramps  PAT_TRIR_SPACED_T8, RAMPS_TRI_CSB
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_REV_CYB
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_REV_CWS
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_REV_RPB
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_RGB
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_RWB
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_CMY
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_BWR
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_REV_RYG
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_REV_GWR
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_REV_GWO
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_RWR
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_GWG
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_CWC
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_BWB
+        pat_eramps  PAT_TRIR_SPACED_T4, RAMPS_TRI_CSB
 NUM_PATS_IN_BANK2 equ $ - (PM_PatTable_Bank2 + 1)
 
 PM_PatTable_Bank3:
@@ -6943,14 +6761,14 @@ PM_PatTable_Bank5:
         ; Two colour ramps, Set A
         pat_eramps  PAT_WEAVE_T2, RAMPS_FIRE_ICE
         pat_eramps  PAT_WEAVE_T1, RAMPS_ICE_STRAWBERRY
-        pat_eramps  PAT_WEAVE_T2, RAMPS_SPECTRAL_VIOLENCE
+        pat_eramps  PAT_WEAVE_T2, RAMPS_TIE_DYED
         pat_eramps  PAT_WEAVE_T2, RAMPS_SKYBLUE
         pat_eramps  PAT_SOFT_FLASH_T2, RAMPS_BLURPLE
         pat_eramps  PAT_SOFT_FLASH_T1, RAMPS_SEAGREEN
         pat_eramps  PAT_SOFT_FLASH_T2, RAMPS_GOLD_SILVER
         pat_eramps  PAT_SOFT_FLASH_T1, RAMPS_FIRE_ICE
         pat_eramps  PAT_SOFT_FLASH_T1, RAMPS_ARC
-        pat_eramps  PAT_SOFT_DOGS_T4, RAMPS_SPECTRAL_VIOLENCE
+        pat_eramps  PAT_SOFT_DOGS_T4, RAMPS_TIE_DYED
         pat_eramps  PAT_SOFT_DOGS_T4, RAMPS_BLURPLE
         pat_eramps  PAT_SOFT_DOGS_T4, RAMPS_ICE_STRAWBERRY
         pat_eramps  PAT_SOFT_DOGS_T1, RAMPS_SKYBLUE_WHITE
@@ -7091,17 +6909,6 @@ PM_BankTable:
         dw  PM_PatTable_Bank8  ; User-settable colour - One colour/ramp
         dw  PM_PatTable_Bank9  ; User-settable colour - Two colours/ramps
 PM_BankTableEnd:
-
-
-;==============================================================================
-; Normally in Page 0 (0x0000..0x07FF)
-;==============================================================================
-
-PM_SlideshowIntvTable:
-        dw  0
-        dw  SLIDESHOW_INTV_1_PWM_CYCLES
-        dw  SLIDESHOW_INTV_2_PWM_CYCLES
-        dw  SLIDESHOW_INTV_3_PWM_CYCLES
 
 
 ;------------------------------------------------------------------------------
