@@ -5,7 +5,7 @@
 
 
 ; PrettyPoi27 firmware for Ninja LED stick poi
-; Version: 0.9.3.1
+; Version: 0.9.3.2
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -2784,8 +2784,7 @@ FetchAnimFrame_Paletted_4c:
 ; in the frame as 0..3).
 ;
 ; Format (2 bytes):
-;   pppp3333: Period 0..15 => 1..16 frame unit periods, LED3 colour index
-;   22221111: LED2 colour index and LED1 colour index
+;   pp332211: Period 0..3 => 1..4 frame unit periods, LED3 colour index
 
         call    FetchAnimFrame_Common
         ; 17 cycles
