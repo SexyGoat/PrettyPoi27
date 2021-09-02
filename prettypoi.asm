@@ -5,7 +5,7 @@
 
 
 ; PrettyPoi27 firmware for Ninja LED stick poi
-; Version: 0.9.3.2
+; Version: 0.9.4.0
 ; (c) Copyright 2021, Daniel Neville
 
 
@@ -5216,7 +5216,7 @@ BAPM_Pal_Basic:
   enumdat WHT2,    dbvrgb, 0x121514  ;  1: Grey
   enumdat WHT1,    dbvrgb, 0x3F4845  ;  2: Silver
   enumdat WHT,     dbvrgb, 0xB5CEC5  ;  3: Standard white
-  enumdat XEN,     dbvrgb, 0xD0DEE4  ;  4: Xenon flash
+  enumdat XEN,     dbvrgb, 0xCADEE4  ;  4: Xenon flash
   ; Main colours
   enumdat RED,     dbvrgb, 0xCC0000  ;  5: Red
   enumdat BLZ,     dbvrgb, 0xC81200  ;  6: Blaze Orange
@@ -5234,21 +5234,21 @@ BAPM_Pal_Basic:
   enumdat CER,     dbvrgb, 0xD2002C  ; 18: Cerise
   enumdat PNK,     dbvrgb, 0xCC2235  ; 19: Pink
   ; Medium intensity colours
-  enumdat RED1,    dbvrgb, 0x5C0000  ; 20: Medium Red
-  enumdat BLZ1,    dbvrgb, 0x5A0800  ; 21: Medium Blaze Orange
-  enumdat ORA1,    dbvrgb, 0x651400  ; 22: Medium Orange
-  enumdat YEL1,    dbvrgb, 0x6B3000  ; 23: Medium Yellow
-  enumdat SNT1,    dbvrgb, 0x264500  ; 24: Medium Snot
-  enumdat GRN1,    dbvrgb, 0x005400  ; 25: Medium Green
-  enumdat SGR1,    dbvrgb, 0x004D14  ; 26: Medium Sea Green
-  enumdat CYN1,    dbvrgb, 0x003D45  ; 27: Medium Cyan
-  enumdat SKY1,    dbvrgb, 0x001945  ; 28: Medium Sky Blue
-  enumdat BLU1,    dbvrgb, 0x000054  ; 29: Medium Blue
-  enumdat PUR1,    dbvrgb, 0x20005C  ; 30: Medium Purple
-  enumdat VIO1,    dbvrgb, 0x320058  ; 31: Medium Violet
-  enumdat MAG1,    dbvrgb, 0x4D0041  ; 32: Medium Magenta
-  enumdat CER1,    dbvrgb, 0x5F0014  ; 33: Medium Cerise
-  enumdat PNK1,    dbvrgb, 0x5C0F18  ; 34: Medium Pink
+  enumdat RED1,    dbvrgb, 0x720000  ; 20: Medium Red
+  enumdat BLZ1,    dbvrgb, 0x700A00  ; 21: Medium Blaze Orange
+  enumdat ORA1,    dbvrgb, 0x7D1900  ; 22: Medium Orange
+  enumdat YEL1,    dbvrgb, 0x853B00  ; 23: Medium Yellow
+  enumdat SNT1,    dbvrgb, 0x305600  ; 24: Medium Snot
+  enumdat GRN1,    dbvrgb, 0x006900  ; 25: Medium Green
+  enumdat SGR1,    dbvrgb, 0x006019  ; 26: Medium Sea Green
+  enumdat CYN1,    dbvrgb, 0x004C56  ; 27: Medium Cyan
+  enumdat SKY1,    dbvrgb, 0x001F56  ; 28: Medium Sky Blue
+  enumdat BLU1,    dbvrgb, 0x000069  ; 29: Medium Blue
+  enumdat PUR1,    dbvrgb, 0x280072  ; 30: Medium Purple
+  enumdat VIO1,    dbvrgb, 0x3F006E  ; 31: Medium Violet
+  enumdat MAG1,    dbvrgb, 0x5F0051  ; 32: Medium Magenta
+  enumdat CER1,    dbvrgb, 0x760019  ; 33: Medium Cerise
+  enumdat PNK1,    dbvrgb, 0x72131E  ; 34: Medium Pink
   ; Low intensity colours
   enumdat RED2,    dbvrgb, 0x100000  ; 35: Dark Red
   enumdat BLZ2,    dbvrgb, 0x100100  ; 36: Dark Blaze Orange
@@ -5266,10 +5266,10 @@ BAPM_Pal_Basic:
   enumdat CER2,    dbvrgb, 0x110004  ; 48: Dark Cerise
   enumdat PNK2,    dbvrgb, 0x100304  ; 49: Dark Pink
   ; Special colours
-  ;enumdat RED3,    dbvrgb, 0x080000  ; 50: ; Darkest Red
-  ;enumdat ORA3,    dbvrgb, 0x090200  ; 51: ; Darkest Orange
-  ;enumdat GRN3,    dbvrgb, 0x000800  ; 52: : Darkest Green
-  ;enumdat BLU3,    dbvrgb, 0x000008  ; 53: : Darkest Blue
+  ;enumdat RED3,    dbvrgb, 0x100304  ; 50: : Darkest Red
+  ;enumdat ORA3,    dbvrgb, 0x100304  ; 51: : Darkest Orange
+  ;enumdat GRN3,    dbvrgb, 0x100304  ; 52: : Darkest Green
+  ;enumdat BLU3,    dbvrgb, 0x100304  ; 53: : Darkest Blue
   endbab
 BASIC_PALETTE_LENGTH equ ENUMIX
 
@@ -5297,7 +5297,7 @@ BAPM_Ramps_Default:
   enumramps RAMPS_ICE_STRAWBERRY, 0,  CYN,  SKY1, BLU2,   PNK,  CER1, RED2
   enumramps RAMPS_GOLD_SILVER,    0,  YEL,  ORA1, BLZ2,   WHT,  WHT1, WHT2
   ; Non-black backgrounds
-  enumramps RAMPS_PURPLE_HAZE,  MAG2, ORA,  BLZ,  RED1,   BLU,  PUR1, VIO1
+  enumramps RAMPS_PURPLE_HAZE,  MAG2, ORA,  BLZ,  CER1,   BLU,  PUR1, VIO1
   enumramps RAMPS_TIE_DYED,     BLZ2, SKY,  YEL,  CER1,   BLZ,  GRN1, BLU1
   enumramps RAMPS_RED_MIST,     RED2, BLZ,  RED,  RED1,   BLZ,  RED,  RED1
   ; Dual plain colours
@@ -5366,14 +5366,14 @@ NUM_RAMP_PAIRS equ ENUMIX
 ;------------------------------------------------------------------------------
 
 
-BAPM_Map_SixSolidColoursPlusKW:
+BAPM_Map_ZigzagMedley6W:
         bablock
-        dbv8b   BLK, GRN, YEL, SKY, RED, CER, SGR, WHT
+        dbv8b   BLK, GRN, YEL, SKY, CER, RED, SGR, WHT
         endbab
 
-BAPM_Map_SixSolidColoursPlusKX:
+BAPM_Map_LinearMedly5X:
         bablock
-        dbv8b   BLK, GRN, YEL, SKY, RED, CER, SGR, XEN
+        dbv8b   BLK, GRN, YEL, SKY, RED, CER, (SGR), XEN
         endbab
 
 ; Triangular rainbow fade pattern
@@ -5651,10 +5651,10 @@ BAPM_Frs_Squares:
         ;pf16c     8,   0,  0,  0
         endbab
 PM_Pat_Squares_Fixed5:
-        pattern PATDF_16C, 7, 1, PATSF_BAPM_PMF, 4 * 5
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_Squares
+        pattern PATDF_16C, 8, 1, PATSF_BAPM_PMF, 4 * 5
+        dw BAPM_Pal_Basic, BAPM_Map_LinearMedly5X, BAPM_Frs_Squares
 PM_Pat_Squares_User2:
-        pattern PATDF_ER16C, 7, 1, PATSF_BAPM_PMF, 4 * 2
+        pattern PATDF_ER16C, 8, 1, PATSF_BAPM_PMF, 4 * 2
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Squares
 
 BAPM_Frs_QuantumSlalom:
@@ -5665,7 +5665,7 @@ BAPM_Frs_QuantumSlalom:
         pf16c     2,   7,  0,  0
         pf16c     1,   7,  7,  7
         pf16c     2,   0,  0,  7
-        pf16c     2,   5,  0,  7
+        pf16c     2,   4,  0,  7
         pf16c     2,   0,  0,  7
         pf16c     1,   7,  7,  7
         pf16c     2,   7,  0,  0
@@ -5677,7 +5677,7 @@ BAPM_Frs_QuantumSlalom:
         pf16c     2,   0,  0,  7
         pf16c     1,   7,  7,  7
         pf16c     2,   7,  0,  0
-        pf16c     2,   7,  0,  4
+        pf16c     2,   7,  0,  5
         pf16c     2,   7,  0,  0
         pf16c     1,   7,  7,  7
         pf16c     2,   0,  0,  7
@@ -5686,40 +5686,32 @@ BAPM_Frs_QuantumSlalom:
         endbab
 PM_Pat_QuantumSlalom_Fixed6:
         pattern PATDF_16C, 8, 2, PATSF_BAPM_PMF, 4 * 6
-        dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusKW
-        dw BAPM_Frs_QuantumSlalom
+        dw BAPM_Pal_Basic, BAPM_Map_ZigzagMedley6W, BAPM_Frs_QuantumSlalom
 PM_Pat_QuantumSlalom_User2:
         pattern PATDF_ER16C, 8, 2, PATSF_BAPM_PMF, 4 * 2
-        dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusKW
-        dw BAPM_Frs_QuantumSlalom
+        dw BAPM_Pal_Basic, BAPM_Map_ZigzagMedley6W, BAPM_Frs_QuantumSlalom
 
 BAPM_Frs_Terminals:
         bablock
         pf16c     2,   0,  0,  1
         pf16c     3,   0,  0,  0
-        pf16c     2,   5,  0,  0
+        pf16c     2,   4,  0,  0
         pf16c     3,   0,  0,  0
         pf16c     2,   0,  0,  2
         pf16c     3,   0,  0,  0
         pf16c     2,   3,  0,  0
         pf16c     3,   0,  0,  0
-        pf16c     2,   0,  0,  4
+        pf16c     2,   0,  0,  5
         pf16c     3,   0,  0,  0
         pf16c     2,   6,  0,  0
         pf16c     3,   0,  0,  0
         endbab
 PM_Pat_Terminals_Fixed6:
         pattern PATDF_16C, 8, 2, PATSF_BAPM_PMF, 2 * 6
-        dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusKW
-        dw BAPM_Frs_Terminals
+        dw BAPM_Pal_Basic, BAPM_Map_ZigzagMedley6W, BAPM_Frs_Terminals
 PM_Pat_Terminals_User2:
         pattern PATDF_ER16C, 8, 2, PATSF_BAPM_PMF, 2 * 2
-        dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusKW
-        dw BAPM_Frs_Terminals
+        dw BAPM_Pal_Basic, BAPM_Map_ZigzagMedley6W, BAPM_Frs_Terminals
 
 BAPM_Frs_TrianglesNearMe:
         bablock
@@ -5761,15 +5753,11 @@ BAPM_Frs_TrianglesNearMe:
         ;pf16c     1,   0,  0,  0
         endbab
 PM_Pat_TrianglesNearMe_Fixed5:
-        pattern PATDF_16C, 7, 4, PATSF_BAPM_PMF, 6 * 5
-        dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusKW
-        dw BAPM_Frs_TrianglesNearMe
+        pattern PATDF_16C, 8, 4, PATSF_BAPM_PMF, 6 * 5
+        dw BAPM_Pal_Basic, BAPM_Map_LinearMedly5X, BAPM_Frs_TrianglesNearMe
 PM_Pat_TrianglesNearMe_User2:
-        pattern PATDF_ER16C, 7, 4, PATSF_BAPM_PMF, 6 * 2
-        dw BAPM_Pal_Basic
-        dw BAPM_Ramps_Default
-        dw BAPM_Frs_TrianglesNearMe
+        pattern PATDF_ER16C, 8, 4, PATSF_BAPM_PMF, 6 * 2
+        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_TrianglesNearMe
 
 BAPM_Frs_ZigZagVs:
         bablock
@@ -5985,10 +5973,10 @@ BAPM_Frs_ChequerW:
         endbab
 PM_Pat_ChequerW_T3:
         pattern PATDF_ER16C, 8, 3, PATSF_BAPM_PMF, 2
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_ChequerW
+        dw BAPM_Pal_Basic, BAPM_Map_ZigzagMedley6W, BAPM_Frs_ChequerW
 PM_Pat_ChequerW_T6:
         pattern PATDF_ER16C, 8, 6, PATSF_BAPM_PMF, 2
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_ChequerW
+        dw BAPM_Pal_Basic, BAPM_Map_ZigzagMedley6W, BAPM_Frs_ChequerW
 
 PM_Pat_ByYourCommand:
         pattern PATDF_24B, 0, 1, PATSF_BAPM_PMF, 6
@@ -6073,7 +6061,7 @@ BAPM_Frs_BlurStep:
         endbab
 PM_Pat_BlurStep:
         pattern PATDF_ER16C, 7, 2, PATSF_BAPM_PMF, 12
-        dw BAPM_Pal_Basic, BAPM_Map_SixSolidColoursPlusKW, BAPM_Frs_BlurStep
+        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_BlurStep
 
 BAPM_Frs_IntenseDecay:
         bablock
@@ -6093,7 +6081,7 @@ BAPM_Frs_IntenseDecay:
 PM_Pat_IntenseDecay:
         pattern PATDF_ER16C, 8, 2, PATSF_BAPM_PMF, 12
         dw BAPM_Pal_Basic
-        dw BAPM_Map_SixSolidColoursPlusKX
+        dw BAPM_Map_ZigzagMedley6W
         dw BAPM_Frs_IntenseDecay
 
 BAPM_Frs_Bookends:
@@ -6101,17 +6089,16 @@ BAPM_Frs_Bookends:
         pf16c     1,   3,  3,  3
         pf16c     1,   2,  2,  2
         pf16c     1,   1,  1,  1
-        pf16c     1,   1,  1,  1
-        pf16c     1,   4,  4,  4
         pf16c     1,   7,  7,  7
+        pf16c     1,   4,  4,  4
         pf16c     1,   5,  5,  5
         pf16c     1,   6,  6,  6
         pf16c     1,   0,  0,  0
         pf16c     1,   0,  0,  0
         endbab
 PM_Pat_Bookends:
-        pattern PATDF_ER16C, 7, 1, PATSF_BAPM_PMF, 10
-        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Bookends
+        pattern PATDF_ER16C, 8, 1, PATSF_BAPM_PMF, 9
+        dw BAPM_Pal_Basic, BAPM_Map_LinearMedly5X, BAPM_Frs_Bookends
 
 BAPM_Frs_Slides:
         bablock
@@ -6146,30 +6133,34 @@ PM_Pat_Slides:
         pattern PATDF_ER16C, 7, 16, PATSF_BAPM_PMF, 26
         dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Slides
 
+
 INCLUDE_MORSE equ 0
 
   if INCLUDE_MORSE
 
-num_frames = 0
 morse_dash macro
         pf4c      3,   1,  1,  1
         pf4c      1,   0,  0,  0
 num_frames += 2
   endm
+
 morse_dot macro
         pf4c      1,   2,  2,  2
         pf4c      1,   0,  0,  0
 num_frames += 2
   endm
+
 morse_letter_space macro
         pf4c      2,   0,  0,  0
 num_frames += 1
   endm
+
 morse_word_space macro
         pf4c      3,   0,  0,  0
         pf4c      3,   0,  0,  0
 num_frames += 2
   endm
+
 morse_A macro
         morse_dot
         morse_dash
@@ -6392,8 +6383,18 @@ morse_question macro
 ;   2    1.71s   6.2m/s, 22.3km/h
 ;   3    2.56s   4.1m/s, 14.9km/h
 
+PM_Pat_Morse_PoV:
+        pattern PATDF_ER4C, 4, 1, PATSF_BAPM_PMF, NUM_MORSE_FRAMES
+        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Morse
+PM_Pat_Morse_Fast:
+        pattern PATDF_ER4C, 4, 33, PATSF_BAPM_PMF, NUM_MORSE_FRAMES
+        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Morse
+PM_Pat_Morse_Slow:
+        pattern PATDF_ER4C, 4, 90, PATSF_BAPM_PMF, NUM_MORSE_FRAMES
+        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Morse
 BAPM_Frs_Morse:
         bablock
+num_frames = 0
         morse_H
         morse_E
         morse_L
@@ -6433,15 +6434,12 @@ BAPM_Frs_Morse:
         morse_word_space
         morse_word_space
         endbab
-PM_Pat_Morse_PoV:
-        pattern PATDF_ER4C, 4, 1, PATSF_BAPM_PMF, num_frames
-        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Morse
-PM_Pat_Morse_Fast:
-        pattern PATDF_ER4C, 4, 33, PATSF_BAPM_PMF, num_frames
-        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Morse
-PM_Pat_Morse_Slow:
-        pattern PATDF_ER4C, 4, 90, PATSF_BAPM_PMF, num_frames
-        dw BAPM_Pal_Basic, BAPM_Ramps_Default, BAPM_Frs_Morse
+
+NUM_MORSE_FRAMES equ num_frames
+  if NUM_MORSE_FRAMES > 256
+    messg "Morse code message takes up more than 256 animation frames."
+  endif
+
   endif
 
 
@@ -6573,6 +6571,7 @@ PM_PatTable_Bank0:
         pat_eramps  PAT_SOLID, RAMPS_MAGENTA
         pat_eramps  PAT_SOLID, RAMPS_CERISE
         pat_eramps  PAT_SOLID, RAMPS_PINK
+        pat_eramps  PAT_SOLID, RAMPS_WHITE
 NUM_PATS_IN_BANK0 equ $ - (PM_PatTable_Bank0 + 1)
 
 PM_PatTable_Bank1:

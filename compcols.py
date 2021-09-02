@@ -22,7 +22,7 @@ D = [
 
 basic_xforms = [
   (lambda x: x),
-  (lambda x: (((45 * c + 50) // 100) for c in x)),
+  (lambda x: (((56 * c + 50) // 100) for c in x)),
   (lambda x: (((8 * c + 50) // 100) for c in x)),
 ]
 basic_xffads = [
@@ -44,7 +44,7 @@ gs_xforms = [
   (lambda x: tuple((((10 * c + 50) // 100) for c in x))),
   (lambda x: tuple((((35 * c + 50) // 100) for c in x))),
   (lambda x: x),
-  (lambda x: t3(0xD0DEE4)),
+  (lambda x: t3(0xCADEE4)),
 ]
 
 def t3(x):
